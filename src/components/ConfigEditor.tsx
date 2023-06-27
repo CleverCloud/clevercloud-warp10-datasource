@@ -49,9 +49,6 @@ export function ConfigEditor(props: Props) {
 
             const id = listConst.findIndex(e => e.name === nameConst)
 
-            console.log(id)
-            console.log(listConst.map(e => e.name + " => " + e.value))
-
             if (id === -1) {
                 const c: ConstProp = {
                     name: nameConst,
@@ -168,9 +165,17 @@ function Const(props: {
             <table>
                 <thead>
                 <tr>
-                    <th></th>
-                    <th></th>
-                    <th>Name</th>
+                    <td><IconButton name={"trash-alt"} variant={"destructive"} tooltip={"Delete"}
+                                    style={{margin: "5px", visibility: "hidden"}}/></td>
+                    <td><IconButton name={"pen"} variant={"primary"} tooltip={"Edit"}
+                                    style={{margin: "20px", visibility: "hidden"}}/>
+                    </td>
+                    <th style={{
+                        minWidth: "5rem",
+                        maxWidth: "15rem",
+                        padding: "10px"
+                    }}>Name
+                    </th>
                     <th>Value</th>
                 </tr>
                 </thead>
