@@ -43,7 +43,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
           status = "Error"
         }
       }
-    ).catch((value) => {
+    ).catch(() => {
       message = "An error has occurred"
       status = "Error"
     })
