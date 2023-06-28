@@ -1,6 +1,6 @@
-import {DataQueryRequest, DataQueryResponse, DataSourceInstanceSettings,} from '@grafana/data';
-import {DataSourceWithBackend, getBackendSrv, TestingStatus, toDataQueryResponse} from '@grafana/runtime';
-import {lastValueFrom, Observable, from, mergeMap, map} from 'rxjs';
+import {DataSourceInstanceSettings,} from '@grafana/data';
+import {DataSourceWithBackend, getBackendSrv, TestingStatus} from '@grafana/runtime';
+import {lastValueFrom} from 'rxjs';
 
 import {WarpDataSourceOptions, WarpQuery} from './types';
 
@@ -43,7 +43,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
           status = "Error"
         }
       }
-    ).catch(() => {
+    ).catch((value) => {
       message = "An error has occurred"
       status = "Error"
     })
@@ -55,16 +55,9 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     } as TestingStatus
   }
 
-  query(request: DataQueryRequest<WarpQuery>): Observable<DataQueryResponse> {
-    const observableQueries = from(request.targets)
-    const observableResult = observableQueries.pipe(
-      mergeMap(query => this.doRequest(query)),
-      fetchResponse => {
-        return fetchResponse.pipe(map(res => ))
-      }
-    )
-    return observableResult
-  }
+  /*query(request: DataQueryRequest<MyQuery>): Observable<DataQueryResponse> {
+
+  }*/
 
   /**
    * send request to Warp10
