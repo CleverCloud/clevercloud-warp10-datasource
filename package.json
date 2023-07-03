@@ -62,7 +62,8 @@
     "@grafana/ui": "9.5.3",
     "react": "17.0.2",
     "react-dom": "17.0.2",
-    "tslib": "2.5.3"
+    "tslib": "2.5.3",
+    "warp10": "^2.1.0"
   },
   "packageManager": "npm@9.6.7"
 }
