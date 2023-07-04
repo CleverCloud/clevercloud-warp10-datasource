@@ -73,7 +73,9 @@ export function ConfigEditor(props: Props) {
     //Delete constant
     const deleteConst = (name: string) => {
         const listConst = options.jsonData.const
-        if (listConst !== undefined) {
+  if (!listConst) {
+    return
+  }
             const newListConst = listConst.filter((item) => item.name !== name);
             const jsonData: MyDataSourceOptions = {
                 ...options.jsonData,
