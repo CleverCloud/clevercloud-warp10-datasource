@@ -43,7 +43,9 @@ export function ConfigEditor(props: Props) {
 
     //Add new constant
     const addConst = () => {
-        if (nameConst !== "" && valueConst !== "") {
+  if (nameConst === "" || valueConst === "") {
+    return
+  }
 
             const listConst = options.jsonData.const ?? []
 
