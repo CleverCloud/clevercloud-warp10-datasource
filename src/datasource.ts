@@ -1,11 +1,19 @@
-import { DataSourceInstanceSettings, CoreApp } from '@grafana/data';
-import { DataSourceWithBackend } from '@grafana/runtime';
+import {CoreApp, DataSourceInstanceSettings} from '@grafana/data';
+import {DataSourceWithBackend, TestingStatus} from '@grafana/runtime';
 
-import { MyQuery, MyDataSourceOptions, DEFAULT_QUERY } from './types';
+import {DEFAULT_QUERY, MyDataSourceOptions, MyQuery} from './types';
 
 export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptions> {
   constructor(instanceSettings: DataSourceInstanceSettings<MyDataSourceOptions>) {
     super(instanceSettings);
+  }
+
+  async testDatasource(): Promise<any> {
+    return {
+      message: "I'm alive",
+      details: undefined,
+      status: "Ok"
+    } as TestingStatus
   }
 
   getDefaultQuery(_: CoreApp): Partial<MyQuery> {
