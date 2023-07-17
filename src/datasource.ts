@@ -1,17 +1,18 @@
-import {DataSourceInstanceSettings,} from '@grafana/data';
+import {DataQueryRequest, DataQueryResponse, DataSourceInstanceSettings,} from '@grafana/data';
 import {DataSourceWithBackend, getBackendSrv, TestingStatus} from '@grafana/runtime';
-import {lastValueFrom} from 'rxjs';
+import {from, lastValueFrom, mergeMap, Observable} from 'rxjs';
 
-import {WarpDataSourceOptions, WarpQuery} from './types';
+import {ConstProp, WarpDataSourceOptions, WarpQuery} from './types';
+import {loader} from "@monaco-editor/react";
 
+import {languageConfig} from "editor/languagesConfig"
 
 export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceOptions> {
 
   //Information database
   private path: string
-
-  /*private access: string
-  private const: ConstProp[]*/
+  /*private access: string*/
+  private const: ConstProp[]
 
   /**
    * @param instanceSettings
@@ -19,8 +20,22 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   constructor(instanceSettings: DataSourceInstanceSettings<WarpDataSourceOptions>) {
     super(instanceSettings);
     this.path = instanceSettings.jsonData.path ?? ""
-    /*this.access = instanceSettings.jsonData.access ?? ""
-    this.const = instanceSettings.jsonData.const ?? []*/
+
+    /*this.access = instanceSettings.jsonData.access ?? ""*/
+
+    this.const = instanceSettings.jsonData.const ?? []
+
+    const constantsPerso = this.const.map(c => "$" + c.name)
+
+    loader.init().then((monaco) => {
+      const {dispose} = monaco.languages.registerCompletionItemProvider("Warp10", {
+        provideCompletionItems: function (model, position, context, token) {
+          return {suggestions: []};
+        }
+      })
+      dispose();
+      languageConfig(monaco, constantsPerso)
+    });
   }
 
   /**
@@ -43,7 +58,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
           status = "Error"
         }
       }
-    ).catch((value) => {
+    ).catch(() => {
       message = "An error has occurred"
       status = "Error"
     })
@@ -55,9 +70,24 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     } as TestingStatus
   }
 
-  /*query(request: DataQueryRequest<MyQuery>): Observable<DataQueryResponse> {
+  query(request: DataQueryRequest<WarpQuery>): Observable<DataQueryResponse> {
 
-  }*/
+    const observableQueries = from(request.targets)
+    return observableQueries.pipe(
+      mergeMap(query => {
+        console.log(query.queryText)
+        this.const.forEach(function (c) {
+          query.queryText.replace("$" + c.name, c.value)
+        })
+        console.log(query.queryText)
+        return this.doRequest(query)
+      }),
+      fetchResponse => {
+        // return fetchResponse.pipe(map(res => ))
+        return new Observable<DataQueryResponse>()
+      }
+    )
+  }
 
   /**
    * send request to Warp10
