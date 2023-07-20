@@ -1,6 +1,6 @@
-import {DataQueryRequest, DataQueryResponse, DataSourceInstanceSettings,} from '@grafana/data';
-import {DataSourceWithBackend, getBackendSrv, TestingStatus} from '@grafana/runtime';
-import {from, lastValueFrom, mergeMap, Observable} from 'rxjs';
+import {DataQueryRequest, DataQueryResponse, DataSourceInstanceSettings, FieldType, toDataFrame,} from '@grafana/data';
+import {DataSourceWithBackend, FetchResponse, getBackendSrv, TestingStatus} from '@grafana/runtime';
+import {from, lastValueFrom, map, mergeMap, Observable, tap} from 'rxjs';
 
 import {ConstProp, WarpDataSourceOptions, WarpQuery} from './types';
 import {loader} from "@monaco-editor/react";
@@ -27,6 +27,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
 
     const constantsPerso = this.const.map(c => "$" + c.name)
 
+    //Warp10 language initialization
     loader.init().then((monaco) => {
       const {dispose} = monaco.languages.registerCompletionItemProvider("Warp10", {
         provideCompletionItems: function (model, position, context, token) {
@@ -69,23 +70,42 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       status: status
     } as TestingStatus
   }
-
+  
   query(request: DataQueryRequest<WarpQuery>): Observable<DataQueryResponse> {
 
     const observableQueries = from(request.targets)
+
     return observableQueries.pipe(
-      mergeMap(query => {
-        console.log(query.queryText)
-        this.const.forEach(function (c) {
-          query.queryText.replace("$" + c.name, c.value)
-        })
-        console.log(query.queryText)
-        return this.doRequest(query)
+      //replacing constants
+      map(query => {
+        query.queryText = this.const.reduce(
+          (modifiedQuery, {name, value}) => modifiedQuery.replace("$" + name, value),
+          query.queryText
+        )
+        return query
       }),
-      fetchResponse => {
-        // return fetchResponse.pipe(map(res => ))
-        return new Observable<DataQueryResponse>()
-      }
+
+      //doing query
+      mergeMap(query => this.doRequest(query)),
+      tap(request => console.log(request)),
+
+      //creating dataframe
+      map((response: FetchResponse<any>): DataQueryResponse => {
+
+        let dataFrames = response.data[0].map((d: { v: any[], l: { host: string } }) => {
+          return toDataFrame({
+            name: d.l.host,
+            fields: [
+              {name: 'Time', type: FieldType.time, values: d.v.map(point => point[0])},
+              {name: 'Value', type: FieldType.number, values: d.v.map(point => point[4])},
+            ],
+          })
+        })
+
+        return {
+          data: dataFrames
+        }
+      })
     )
   }
 
