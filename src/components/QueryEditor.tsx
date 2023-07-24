@@ -1,24 +1,12 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {QueryEditorProps} from '@grafana/data';
 import {DataSource} from '../datasource';
 import {WarpDataSourceOptions, WarpQuery} from '../types';
 import {Editor} from "@monaco-editor/react";
+import {debounceTime, tap, Subject} from 'rxjs';
 
 
 type Props = QueryEditorProps<DataSource, WarpQuery, WarpDataSourceOptions>;
-
-/**
- * trigger a function, but only once per use case
- * @param fn trigger function
- * @param ms timelines per use case
- */
-function debounce(fn: Function, ms = 3000) {
-  let timeoutId: ReturnType<typeof setTimeout>;
-  return function (...args: any[]) {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn.apply(args), ms);
-  };
-}
 
 /**
  * return number of lines of text
@@ -33,24 +21,33 @@ export function QueryEditor({query, onChange, onRunQuery}: Props) {
   const {queryText} = query;
 
   //height management variable
-  let [heightEditor, setHeightEditor] = useState(nbrLinesText(queryText) * 20);
+  let [heightEditor, setHeightEditor] = useState(nbrLinesText(queryText) * 20)
 
+  //operations changes
+  let [subject, _a] = useState(new Subject<string | undefined>())
+  let [onChangeObservable, _b] = useState(subject.asObservable().pipe(
+    tap(value => {
+      //update height editor
+      const nbrLine = nbrLinesText(value)
+      if (nbrLine > 10) {
+        setHeightEditor(200)
+      } else {
+        setHeightEditor(nbrLine * 20)
+      }
+
+      onChange({...query, queryText: value ?? ''})
+    }),
+    debounceTime(2000),
+  ))
+
+  useEffect(() => {
+    let subscription = onChangeObservable.subscribe(() => onRunQuery())
+    return () => subscription.unsubscribe()
+  }, [onChangeObservable, onRunQuery])
 
   const onQueryTextChange = (value: string | undefined) => {
-
-    //update height editor
-    const nbrLine = nbrLinesText(value)
-    if (nbrLine > 10) {
-      setHeightEditor(200)
-    } else {
-      setHeightEditor(nbrLine * 20)
-    }
-
-    onChange({...query, queryText: value ?? ''});
-    debounceOnRunQuery()
-  };
-
-  const debounceOnRunQuery = debounce(() => onRunQuery());
+    subject.next(value)
+  }
 
 
   return (
