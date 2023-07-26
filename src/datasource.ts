@@ -70,7 +70,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       status: status
     } as TestingStatus
   }
-  
+
   query(request: DataQueryRequest<WarpQuery>): Observable<DataQueryResponse> {
 
     const observableQueries = from(request.targets)
@@ -79,7 +79,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       //replacing constants
       map(query => {
         query.queryText = this.const.reduce(
-          (modifiedQuery, {name, value}) => modifiedQuery.replace("$" + name, value),
+          (modifiedQuery, {name, value}) => modifiedQuery.replace("$" + name, "'" + value + "'"),
           query.queryText
         )
         return query
@@ -93,11 +93,12 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       map((response: FetchResponse<any>): DataQueryResponse => {
 
         let dataFrames = response.data[0].map((d: { v: any[], l: { host: string } }) => {
+          const i = d.v[0].length - 1
           return toDataFrame({
             name: d.l.host,
             fields: [
               {name: 'Time', type: FieldType.time, values: d.v.map(point => point[0])},
-              {name: 'Value', type: FieldType.number, values: d.v.map(point => point[4])},
+              {name: 'Value', type: FieldType.number, values: d.v.map(point => point[i])},
             ],
           })
         })
