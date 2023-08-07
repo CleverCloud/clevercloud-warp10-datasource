@@ -24,3 +24,13 @@ export interface WarpDataSourceOptions extends DataSourceJsonData {
 export interface MySecureJsonData {
   apiKey?: string;
 }
+
+export interface WarpDataResult {
+  c: string,
+  l: any,
+  a: any,
+  la: number,
+  v: number[][]
+}
+
+export type WarpResult = WarpDataResult[] | WarpDataResult[][]
