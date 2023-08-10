@@ -1,7 +1,7 @@
 import {languages} from "monaco-editor";
 import {configuration, constants, controls, functions, keywords, languageDef} from "./warpDefinition";
 
-export const languageConfig = (monaco: typeof import("/home/siori/grafana-plugins/clevercloud-warp10-datasource/node_modules/monaco-editor/esm/vs/editor/editor.api"), constantsPerso: string[]) => {
+export const languageConfig = (monaco: typeof import("../../node_modules/monaco-editor/esm/vs/editor/editor.api"), constantsPerso: string[]) => {
   monaco.languages.register({id: "Warp10"})
   monaco.languages.registerCompletionItemProvider("Warp10", {
     provideCompletionItems: (model, position, context, token) => {
