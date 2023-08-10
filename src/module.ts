@@ -6,4 +6,4 @@ import {WarpQuery, WarpDataSourceOptions} from './types';
 
 export const plugin = new DataSourcePlugin<DataSource, WarpQuery, WarpDataSourceOptions>(DataSource)
   .setConfigEditor(ConfigEditor)
-  .setQueryEditor(QueryEditor);
+  .setQueryEditor(QueryEditor)
