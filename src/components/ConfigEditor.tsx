@@ -2,16 +2,36 @@ import React, {ChangeEvent, useState} from 'react';
 import {ActionMeta, InlineField, Input, Select, Card, TextArea, Button, IconButton} from '@grafana/ui';
 import {DataSourcePluginOptionsEditorProps, SelectableValue} from '@grafana/data';
 import {ConstProp, WarpDataSourceOptions} from '../types';
+import {Editor, loader} from "@monaco-editor/react";
+import {languageConfig} from "../editor/languagesConfig";
 
 interface Props extends DataSourcePluginOptionsEditorProps<WarpDataSourceOptions> {
 }
 
+function nbrLinesText(text: string | undefined) {
+  return ([...text ?? ""].filter(x => x === "\n").length + 1)
+}
+
 export function ConfigEditor(props: Props) {
+
   const {onOptionsChange, options} = props;
 
   //Var new constant
   let [nameConst, setNameConst] = useState("");
   let [valueConst, setValueConst] = useState("");
+
+
+  //Var new constant
+  let [nameMacro, setNameMacro] = useState("");
+  let [valueMacro, setValueMacro] = useState("");
+
+  //height management variable
+  let [heightEditor, setHeightEditor] = useState(nbrLinesText(valueMacro) * 20)
+
+  //Warp10 language initialization
+  loader.init().then((monaco) => {
+    languageConfig(monaco, [], [], [])
+  });
 
   //Modification input URL
   const onPathChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -23,7 +43,7 @@ export function ConfigEditor(props: Props) {
   };
 
   // Modification select access
-  const onAccessChange = (value: SelectableValue<string>, actionMeta: ActionMeta) => {
+  const onAccessChange = (value: SelectableValue<string>, _actionMeta: ActionMeta) => {
     const jsonData = {
       ...options.jsonData,
       access: value.value,
@@ -32,13 +52,29 @@ export function ConfigEditor(props: Props) {
   };
 
   //Modification input name of the new constant
-  const onNameChange = (event: ChangeEvent<HTMLInputElement>) => {
+  const onNameConstChange = (event: ChangeEvent<HTMLInputElement>) => {
     setNameConst(event.target.value)
   };
 
   //Modification input value of the new constant
-  const onValueChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+  const onValueConstChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     setValueConst(event.target.value)
+  };
+
+  //Modification input name of the new macro
+  const onNameMacroChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setNameMacro(event.target.value)
+  };
+
+  //Modification input value of the new macro
+  const onValueMacroChange = (value: string | undefined) => {
+    setValueMacro(value ?? '')
+    const nbrLine = nbrLinesText(value)
+    if (nbrLine > 10) {
+      setHeightEditor(200)
+    } else {
+      setHeightEditor(nbrLine * 20)
+    }
   };
 
   //Add new constant
@@ -89,6 +125,54 @@ export function ConfigEditor(props: Props) {
     setValueConst(value)
   }
 
+  //Add new macro
+  const addMacro = () => {
+    if (nameMacro !== "" && valueMacro !== "") {
+
+      const listMacro = options.jsonData.macro ?? []
+
+      const id = listMacro.findIndex(e => e.name === nameMacro)
+
+      if (id === -1) {
+        const c: ConstProp = {
+          name: nameMacro,
+          value: valueMacro
+        }
+        listMacro.push(c)
+      } else {
+        listMacro[id].value = valueMacro
+      }
+
+      const jsonData: WarpDataSourceOptions = {
+        ...options.jsonData,
+        macro: listMacro
+      }
+      onOptionsChange({...options, jsonData});
+
+      setNameMacro("")
+      setValueMacro("")
+    }
+  }
+
+  //Delete macro
+  const deleteMacro = (name: string) => {
+    const listeMacro = options.jsonData.macro
+    if (listeMacro !== undefined) {
+      const newListMacro = listeMacro.filter((item) => item.name !== name);
+      const jsonData: WarpDataSourceOptions = {
+        ...options.jsonData,
+        macro: newListMacro
+      }
+      onOptionsChange({...options, jsonData});
+    }
+  }
+
+  //Modification macro (modification input name and value with current constant values)
+  const modifyMacro = (name: string, value: string) => {
+    setNameMacro(name)
+    setValueMacro(value)
+  }
+
   //Front
   return (
     <div className="gf-form-group">
@@ -131,14 +215,14 @@ export function ConfigEditor(props: Props) {
         <InlineField label="Name" labelWidth={12}>
           <Input
             width={119}
-            onChange={onNameChange}
+            onChange={onNameConstChange}
             value={nameConst}
           />
         </InlineField>
         <InlineField label="Value" labelWidth={12}>
           <TextArea
             cols={100}
-            onChange={onValueChange}
+            onChange={onValueConstChange}
             value={valueConst}
           />
         </InlineField>
@@ -148,11 +232,50 @@ export function ConfigEditor(props: Props) {
         <h3 style={{marginTop: "1rem"}}>Constant list</h3>
         <Const listConst={options.jsonData.const} deleteConst={deleteConst} modifyConst={modifyConst}/>
       </div>
+      <div style={{marginTop: "3rem"}}>
+        <h1>Macros</h1>
+        <Card style={{borderLeft: "solid 3px  #3498db"}}>
+          <Card.Heading>
+            This macro can be used in every templating or query. Register your macro name and value
+            {/* eslint-disable-next-line react/no-unescaped-entities */}
+            and prefix your constant name with "@" in your queries/templating.
+          </Card.Heading>
+          <Card.Description>
+            example: <code>@dropfirst</code>
+          </Card.Description>
+        </Card>
+        <h3 style={{marginTop: "1rem"}}>Add a macro</h3>
+        <InlineField label="Name" labelWidth={12}>
+          <Input
+            width={119}
+            onChange={onNameMacroChange}
+            value={nameMacro}
+          />
+        </InlineField>
+        <div className="gf-form" style={{border: "solid 1px #2e3136", width: 1052}}>
+          <Editor height={heightEditor} defaultLanguage="Warp10" theme="grafanaTheme" defaultValue=""
+                  value={valueMacro}
+                  onChange={onValueMacroChange}
+                  options={{
+                    scrollBeyondLastLine: false,
+                    minimap: {
+                      enabled: false,
+                    },
+                  }}
+          />
+        </div>
+
+        <Button variant="primary" onClick={addMacro}>
+          Add
+        </Button>
+        <h3 style={{marginTop: "1rem"}}>Macros list</h3>
+        <Const listConst={options.jsonData.macro} deleteConst={deleteMacro} modifyConst={modifyMacro}/>
+      </div>
     </div>
   );
 }
 
-//Function display constant list
+//Function display constant list (or macro list)
 function Const(props: {
   listConst?: ConstProp[],
   deleteConst: (name: string) => void,

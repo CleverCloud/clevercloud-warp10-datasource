@@ -49,7 +49,6 @@ export function QueryEditor({query, onChange, onRunQuery}: Props) {
     subject.next(value)
   }
 
-
   return (
 
     <div className="gf-form" style={{border: "solid 1px #2e3136"}}>
