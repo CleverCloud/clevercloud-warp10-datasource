@@ -16,6 +16,7 @@ export interface WarpDataSourceOptions extends DataSourceJsonData {
   path?: string;
   access?: string;
   const?: ConstProp[];
+  macro?: ConstProp[];
 }
 
 /**
@@ -25,6 +26,9 @@ export interface MySecureJsonData {
   apiKey?: string;
 }
 
+/**
+ * Result query interface
+ */
 export interface WarpDataResult {
   c: string,
   l: any,

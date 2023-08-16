@@ -1471,5 +1471,5 @@ export const languageDef: languages.IMonarchLanguage = {
 
 // This config defines the editor's behavior.
 export const configuration: languages.LanguageConfiguration = {
-  brackets: [['(', ')'], ['{', '}'], ['[', ']'], ['\'', '\''], ['"', '"']]
+  brackets: [['(', ')'], ['{', '}'], ['[', ']'], ['\'', '\''], ['"', '"'], ['<%', '%>']]
 }

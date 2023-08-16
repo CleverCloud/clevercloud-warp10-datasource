@@ -3,9 +3,9 @@ import {
   DataQueryResponse,
   DataSourceInstanceSettings,
   FieldType,
-  MutableDataFrame
+  MutableDataFrame, TypedVariableModel
 } from '@grafana/data';
-import {DataSourceWithBackend, FetchResponse, getBackendSrv, TestingStatus} from '@grafana/runtime';
+import {DataSourceWithBackend, FetchResponse, getBackendSrv, getTemplateSrv, TestingStatus} from '@grafana/runtime';
 import {catchError, from, lastValueFrom, map, mergeMap, Observable, tap} from 'rxjs';
 
 import {ConstProp, WarpDataResult, WarpDataSourceOptions, WarpQuery, WarpResult} from './types';
@@ -21,6 +21,10 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   /*private access: string*/
   private const: ConstProp[]
 
+  private macro: ConstProp[]
+
+  private var: TypedVariableModel[]
+
   /**
    * @param instanceSettings
    */
@@ -32,16 +36,18 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
 
     this.const = instanceSettings.jsonData.const ?? []
 
+    this.macro = instanceSettings.jsonData.macro ?? []
+
+    this.var = getTemplateSrv().getVariables()
+
+
     const constantsPerso = this.const.map(c => "$" + c.name)
+    const macrosPerso = this.macro.map(c => "@" + c.name)
+    const varPerso = this.var.map(c => "$" + c.name)
 
     //Warp10 language initialization
     loader.init().then((monaco) => {
-      /*monaco.languages.registerCompletionItemProvider("Warp10", {
-        provideCompletionItems: function (model, position, context, token) {
-          return {suggestions: []};
-        }
-      }).dispose();*/
-      languageConfig(monaco, constantsPerso)
+      languageConfig(monaco, constantsPerso, macrosPerso, varPerso)
 
     });
   }
@@ -151,82 +157,74 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   }
 
   /**
-   * Compute Datasource variables and templating variables, store it on top of the stack
+   * Compute Datasource constant, macro and templating variables, store it on top of the stack
    * @return {string} WarpScript header
    */
   private computeGrafanaContext(): string {
 
     let wsHeader = ''
-    // Datasource vars
-    // this.const.forEach((myVar) => {
-    //   let value = myVar.value
-    //   if (typeof value === 'string') {
-    //     value = value.replace(/'/g, '"')
-    //   }
-    //   if (typeof value === 'string' && !value.startsWith('<%') && !value.endsWith('%>')) {
-    //     value = `'${value}'`
-    //   }
-    //   wsHeader += `${value || 'NULL'} '${myVar}' STORE\n`
-    // })
 
-    // Dashboad templating vars
-    // current.text is the label. In case of multivalue, it is a string 'valueA + valueB'
-    // current.value is a string, depending on query output. In case of multivalue, it is an array of strings. array contains "$__all" if user selects All.
+    //Add constants
     this.const.forEach((myVar) => {
-      const value = myVar.value;
 
+      wsHeader += `'${myVar.value}' '${myVar.name}' STORE\n`;
 
-      // if (((Array.isArray(value) && (value.length === 1 && value[0] === '$__all')) || value === "$__all")) {
-      //   // User checked the "select all" checkbox
-      //   if (myVar.allValue && myVar.allValue !== "") {
-      //     // User also defined a custom value in the variable settings
-      //     const customValue: String = myVar.allValue;
-      //     wsHeader += `[ '${customValue}' ] '${myVar.name}_list' STORE\n`
-      //     // custom all value is taken as it is. User may or may not use a regexp.
-      //     wsHeader += ` '${customValue}' '${myVar.name}' STORE\n`
-      //   } else {
-      //     // if no custom all value is defined :
-      //     // it means we shall create a list of all the values in WarpScript from options, ignoring "$__all" special option value.
-      //     const allValues: String[] = myVar.options.filter(o => o.value !== "$__all").map(o => o.value);
-      //     wsHeader += `[ ${allValues.map(s => `'${s}'`).join(" ")} ] '${myVar.name}_list' STORE\n`; // all is stored as string in generated WarpScript.
-      //     // create a ready to use regexp in the variable
-      //     wsHeader += ` '~' $${myVar.name}_list REOPTALT + '${myVar.name}' STORE\n`
-      //   }
-      // } else if (Array.isArray(value)) {
-      //   // user checks several choices
-      //   wsHeader += `[ ${value.map(s => `'${s}'`).join(" ")} ] '${myVar.name}_list' STORE\n`; // all is stored as string in generated WarpScript.
-      //   if (1 === value.length) {
-      //     // one value checked : copy it as it is in WarpScript variable
-      //     wsHeader += ` '${value[0]}' '${myVar.name}' STORE\n`
-      //   } else {
-      //     // several values checked : do a regexp
-      //     //also create a ready to use regexp, suffixed by _wsregexp
-      //     wsHeader += ` '~' $${myVar.name}_list REOPTALT + '${myVar.name}' STORE\n`
-      //   }
-      // } else {
-      // no multiple selection, variable is the string. As type is lost by Grafana, there is no safe way to assume something different than a string here.
-      // List is also created to create scripts compatible whatever the defined selection mode
-      // wsHeader += `[ '${value}' ] '${myVar.name}_list' STORE\n`;
-      wsHeader += `'${value}' '${myVar.name}' STORE\n`;
-      // }
     })
+
+    //Add macros
+    this.macro.forEach((myMacro) => {
+      wsHeader += `${myMacro.value} '${myMacro.name}' STORE\n`;
+    })
+
+
+    //Add Variables
+    const templateSrv = getTemplateSrv();
+    this.var.forEach((myVar) => {
+      const label = '${' + myVar.name + ':json}';
+      let val = templateSrv.replace(label);
+
+      //Variable multi
+      if (val[0] === "[") {
+        let valList = JSON.parse(val)
+        let valListChar = "[ "
+        valList.forEach((x: string) => {
+
+          //string
+          if (!isNaN(+x)) {
+            valListChar += x + " "
+
+            //int
+          } else {
+            valListChar += "'" + x + "' "
+          }
+        })
+        valListChar += "]"
+
+        wsHeader += `${valListChar} '${myVar.name}' STORE\n`;
+      } else {
+
+        //string
+        if (isNaN(+val)) {
+          wsHeader += `'${val}' '${myVar.name}' STORE\n`;
+
+          //int
+        } else {
+          wsHeader += `${val} '${myVar.name}' STORE\n`;
+        }
+      }
+    })
+
+
     wsHeader += "LINEON\n";
     return wsHeader
   }
 
-  /*private computePanelRepeatVars(opts): string {
-    let str = ''
-    if (opts.scopedVars) {
-      for (let k in opts.scopedVars) {
-        let v = opts.scopedVars[k]
-        if (v.selected) {
-          str += `'${v.value}' '${k}' STORE `
-        }
-      }
-    }
-    return str
-  }*/
 
+  /**
+   * Compute time variable store it on top of the stack
+   * @param request
+   * @private
+   */
   private computeTimeVars(request: DataQueryRequest<WarpQuery>): string {
     let vars: any = {
       start: request.range.from.toDate().getTime() * 1000,
