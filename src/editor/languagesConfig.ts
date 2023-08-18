@@ -24,7 +24,7 @@ export const languageConfig = (monaco: typeof import("../../node_modules/monaco-
   }
 }
 
-function suggestion(monaco: typeof import("/home/siori/grafana-plugins/clevercloud-warp10-datasource/node_modules/monaco-editor/esm/vs/editor/editor.api"), constantsPerso: string[], macrosPerso: string[], varPerso: string[], position: any, model: any) {
+function suggestion(monaco: typeof import("../../node_modules/monaco-editor/esm/vs/editor/editor.api"), constantsPerso: string[], macrosPerso: string[], varPerso: string[], position: any, model: any) {
   const word = model.getWordUntilPosition(position);
 
   const constantsPersoList: languages.CompletionItem[] = [
