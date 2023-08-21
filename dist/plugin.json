@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/master/docs/sources/developers/plugins/plugin.schema.json",
+  "type": "datasource",
+  "name": "Warp10",
+  "id": "clevercloud-warp10-datasource",
+  "metrics": true,
+  "backend": true,
+  "streaming": true,
+  "executable": "gpx_warp10",
+  "info": {
+    "description": "Warp 10™ Platform datasource plugin",
+    "author": {
+      "name": "Clever cloud"
+    },
+    "keywords": [
+      "datasource"
+    ],
+    "logos": {
+      "small": "assets/warp10-c.png",
+      "large": "assets/warp10-h.png"
+    },
+    "links": [],
+    "screenshots": [],
+    "version": "0.1.0",
+    "updated": "2023-08-21"
+  },
+  "dependencies": {
+    "grafanaDependency": ">=9.5.3",
+    "plugins": []
+  }
+}
