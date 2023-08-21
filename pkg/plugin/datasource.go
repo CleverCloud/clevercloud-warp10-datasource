@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
+	b "github.com/miton18/go-warp10/base"
 )
 
 // Make sure Datasource implements required interfaces. This is important to do
@@ -59,13 +61,17 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 	return response, nil
 }
 
-type queryModel struct{}
+type Query struct {
+	warpscript string
+	client     *b.Client
+	Errs       []error
+}
 
 func (d *Datasource) query(_ context.Context, pCtx backend.PluginContext, query backend.DataQuery) backend.DataResponse {
 	var response backend.DataResponse
 
 	// Unmarshal the JSON into our queryModel.
-	var qm queryModel
+	var qm Query
 
 	err := json.Unmarshal(query.JSON, &qm)
 	if err != nil {
@@ -106,4 +112,37 @@ func (d *Datasource) CheckHealth(_ context.Context, req *backend.CheckHealthRequ
 		Status:  status,
 		Message: message,
 	}, nil
+}
+
+// Exec send the WarpScript and parse the response
+func (q *Query) Exec() (gtsList b.GTSList, err error) {
+
+	if len(q.Errs) > 0 {
+		errs := []string{}
+		for _, err := range q.Errs {
+			errs = append(errs, err.Error())
+		}
+		return nil, fmt.Errorf("Can't execute query with errors: %s", strings.Join(errs, "\n"))
+	}
+
+	body, err := q.client.Exec(q.warpscript)
+	if err != nil {
+		return
+	}
+
+	var stack []b.GTSList
+	if err = json.Unmarshal(body, &stack); err != nil {
+		return
+	}
+
+	gtsList = stack[0]
+	return
+}
+
+// NewQuery should be called to build a new Warpscript
+func NewQuery(c *b.Client) *Query {
+	return &Query{
+		warpscript: "// GENERATED WARPSCRIPT\n",
+		client:     c,
+	}
 }

@@ -1,7 +1,7 @@
 import React, {ChangeEvent, useState} from 'react';
-import {ActionMeta, InlineField, Input, Select, Card, TextArea, Button, IconButton} from '@grafana/ui';
+import {ActionMeta, Button, Card, IconButton, InlineField, Input, Select, TextArea} from '@grafana/ui';
 import {DataSourcePluginOptionsEditorProps, SelectableValue} from '@grafana/data';
-import {ConstProp, WarpDataSourceOptions} from '../types';
+import {Access, ConstProp, WarpDataSourceOptions} from '../types';
 import {Editor, loader} from "@monaco-editor/react";
 import {languageConfig} from "../editor/languagesConfig";
 
@@ -44,9 +44,12 @@ export function ConfigEditor(props: Props) {
 
   // Modification select access
   const onAccessChange = (value: SelectableValue<string>, _actionMeta: ActionMeta) => {
+
+    const valueAccess: Access = value.value === 'DIRECT' ? "DIRECT" : "PROXY";
+
     const jsonData = {
       ...options.jsonData,
-      access: value.value,
+      access: valueAccess,
     };
     onOptionsChange({...options, jsonData});
   };
@@ -189,10 +192,10 @@ export function ConfigEditor(props: Props) {
                      tooltip={"Direct = url is used directly from browser Proxy = Grafana backend will proxy the request"}>
           <Select
             options={[
-              {value: 'direct', label: 'direct'},
-              {value: 'proxy', label: 'proxy'}
+              {value: 'DIRECT', label: 'direct'},
+              {value: 'PROXY', label: 'proxy'}
             ]}
-            value={options.jsonData.access}
+            // value={options.jsonData.access === Access.DIRECT ? 'DIRECT' : 'PROXY'}
             onChange={onAccessChange}
             width={60}
             id={"select"}

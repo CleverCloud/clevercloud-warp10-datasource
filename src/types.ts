@@ -14,10 +14,12 @@ export interface ConstProp {
  */
 export interface WarpDataSourceOptions extends DataSourceJsonData {
   path?: string;
-  access?: string;
+  access?: Access;
   const?: ConstProp[];
   macro?: ConstProp[];
 }
+
+export type Access = 'DIRECT' | 'PROXY'
 
 /**
  * Value that is used in the backend, but never sent over HTTP to the frontend

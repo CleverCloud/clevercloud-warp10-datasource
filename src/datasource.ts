@@ -3,12 +3,15 @@ import {
   DataQueryResponse,
   DataSourceInstanceSettings,
   FieldType,
-  MutableDataFrame, TypedVariableModel
+  MutableDataFrame,
+  ScopedVars,
+  TypedVariableModel
 } from '@grafana/data';
 import {DataSourceWithBackend, FetchResponse, getBackendSrv, getTemplateSrv, TestingStatus} from '@grafana/runtime';
+
 import {catchError, from, lastValueFrom, map, mergeMap, Observable, tap} from 'rxjs';
 
-import {ConstProp, WarpDataResult, WarpDataSourceOptions, WarpQuery, WarpResult} from './types';
+import {Access, ConstProp, WarpDataResult, WarpDataSourceOptions, WarpQuery, WarpResult} from './types';
 import {loader} from "@monaco-editor/react";
 
 import {languageConfig} from "editor/languagesConfig"
@@ -18,12 +21,16 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
 
   //Information database
   private path: string
-  /*private access: string*/
+
+  private access: Access
+
   private const: ConstProp[]
 
   private macro: ConstProp[]
 
   private var: TypedVariableModel[]
+
+  private request!: DataQueryRequest<WarpQuery>
 
   /**
    * @param instanceSettings
@@ -32,7 +39,11 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     super(instanceSettings);
     this.path = instanceSettings.jsonData.path ?? ""
 
-    /*this.access = instanceSettings.jsonData.access ?? ""*/
+    if(instanceSettings.jsonData.access?.toUpperCase() === "PROXY") {
+      this.access = "PROXY"
+    } else {
+      this.access = "DIRECT"
+    }
 
     this.const = instanceSettings.jsonData.const ?? []
 
@@ -50,6 +61,15 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       languageConfig(monaco, constantsPerso, macrosPerso, varPerso)
 
     });
+  }
+
+  /**
+   * NOTE: if you do modify the structure or use template variables, alerting queries may not work
+   * as expected
+   * */
+  applyTemplateVariables(query: WarpQuery, _scopedVars: ScopedVars): Record<string, any> {
+    query.queryText = this.computeTimeVars(this.request) + this.computeGrafanaContext() + query.queryText
+    return query
   }
 
   /**
@@ -85,19 +105,18 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   }
 
   query(request: DataQueryRequest<WarpQuery>): Observable<DataQueryResponse> {
+    this.request = request
+    return this.access === "DIRECT" ?
+        this.queryDirect(request) :
+        super.query(request);
+  }
 
+  queryDirect(request: DataQueryRequest<WarpQuery>): Observable<DataQueryResponse> {
     const observableQueries = from(request.targets)
 
     return observableQueries.pipe(
       //replacing constants
-      map(query => {
-        query.queryText = this.computeTimeVars(request) + this.computeGrafanaContext() + query.queryText
-        /*this.const.reduce(
-          (modifiedQuery, {name, value}) => modifiedQuery.replace("$" + name, "'" + value + "'"),
-          query.queryText
-        )*/
-        return query
-      }),
+      map(query => (this.applyTemplateVariables(query, request.scopedVars)) as WarpQuery),
 
       //doing query
       mergeMap(query => this.doRequest(query)),
