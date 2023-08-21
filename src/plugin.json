@@ -8,7 +8,7 @@
   "streaming": true,
   "executable": "gpx_warp10",
   "info": {
-    "description": "Plugin grafana datasource for warp10 platform",
+    "description": "Warp 10™ Platform datasource plugin",
     "author": {
       "name": "Clever cloud"
     },
@@ -16,13 +16,13 @@
       "datasource"
     ],
     "logos": {
-      "small": "img/logo.svg",
-      "large": "img/logo.svg"
+      "small": "assets/warp10-c.png",
+      "large": "assets/warp10-h.png"
     },
     "links": [],
     "screenshots": [],
-    "version": "%VERSION%",
-    "updated": "%TODAY%"
+    "version": "0.1.0",
+    "updated": "2023-08-21"
   },
   "dependencies": {
     "grafanaDependency": ">=9.5.3",
