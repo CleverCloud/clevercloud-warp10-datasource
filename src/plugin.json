@@ -5,6 +5,7 @@
   "id": "clevercloud-warp10-datasource",
   "metrics": true,
   "backend": true,
+  "alerting": true,
   "streaming": true,
   "executable": "gpx_warp10",
   "info": {
