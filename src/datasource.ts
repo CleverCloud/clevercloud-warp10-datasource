@@ -11,7 +11,7 @@ import {DataSourceWithBackend, FetchResponse, getBackendSrv, getTemplateSrv, Tes
 
 import {catchError, from, lastValueFrom, map, mergeMap, Observable, tap} from 'rxjs';
 
-import {Access, ConstProp, WarpDataResult, WarpDataSourceOptions, WarpQuery, WarpResult} from './types';
+import {ConstProp, WarpDataResult, WarpDataSourceOptions, WarpQuery, WarpResult} from './types';
 import {loader} from "@monaco-editor/react";
 
 import {languageConfig} from "editor/languagesConfig"
@@ -22,7 +22,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   //Information database
   private path: string
 
-  private access: Access
+  private access: 'DIRECT' | 'PROXY'
 
   private const: ConstProp[]
 
@@ -36,14 +36,17 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * @param instanceSettings
    */
   constructor(instanceSettings: DataSourceInstanceSettings<WarpDataSourceOptions>) {
+    console.log(instanceSettings.jsonData)
     super(instanceSettings);
     this.path = instanceSettings.jsonData.path ?? ""
 
-    if(instanceSettings.jsonData.access?.toUpperCase() === "PROXY") {
-      this.access = "PROXY"
-    } else {
-      this.access = "DIRECT"
-    }
+    // if(instanceSettings.jsonData.access?.toUpperCase() === "PROXY") {
+    //   this.access = "PROXY"
+    // } else {
+    //   this.access = "DIRECT"
+    // }
+
+    this.access = instanceSettings.jsonData.access ?? 'DIRECT'
 
     this.const = instanceSettings.jsonData.const ?? []
 
@@ -68,8 +71,10 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * as expected
    * */
   applyTemplateVariables(query: WarpQuery, _scopedVars: ScopedVars): Record<string, any> {
-    query.queryText = this.computeTimeVars(this.request) + this.computeGrafanaContext() + query.queryText
-    return query
+    return {
+      ...query,
+      queryText: this.computeTimeVars(this.request) + this.computeGrafanaContext() + query.queryText
+    }
   }
 
   /**
@@ -78,6 +83,12 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    */
   async testDatasource(): Promise<any> {
 
+    return this.access === "DIRECT" ?
+        this.checkHealth() :
+        super.callHealthCheck();
+  }
+
+  async checkHealth(): Promise<any> {
     let message = ""
     let status = ""
 
@@ -112,6 +123,9 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   }
 
   queryDirect(request: DataQueryRequest<WarpQuery>): Observable<DataQueryResponse> {
+
+    console.log("Front")
+
     const observableQueries = from(request.targets)
 
     return observableQueries.pipe(
