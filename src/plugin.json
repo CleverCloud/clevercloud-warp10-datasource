@@ -14,7 +14,8 @@
       "name": "Clever cloud"
     },
     "keywords": [
-      "datasource"
+      "datasource",
+      "Warp10"
     ],
     "logos": {
       "small": "assets/warp10-c.png",
@@ -22,8 +23,8 @@
     },
     "links": [],
     "screenshots": [],
-    "version": "0.1.0",
-    "updated": "2023-08-21"
+    "version": "0.1.1",
+    "updated": "2023-08-28"
   },
   "dependencies": {
     "grafanaDependency": ">=9.5.3",
