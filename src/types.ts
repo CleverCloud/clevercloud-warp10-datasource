@@ -1,4 +1,5 @@
-import {DataQuery, DataSourceJsonData} from '@grafana/data';
+import {DataSourceJsonData} from '@grafana/data';
+import {DataQuery} from '@grafana/schema'
 
 export interface WarpQuery extends DataQuery {
   queryText: string;
@@ -14,7 +15,7 @@ export interface ConstProp {
  */
 export interface WarpDataSourceOptions extends DataSourceJsonData {
   path?: string;
-  access?: string;
+  access?: 'DIRECT' | 'PROXY';
   const?: ConstProp[];
   macro?: ConstProp[];
 }
