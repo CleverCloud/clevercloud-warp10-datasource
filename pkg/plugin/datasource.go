@@ -35,13 +35,11 @@ type WarpDataSourceOptions struct {
 // NewDatasource creates a new datasource instance.
 func NewDatasource(ds backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 
-	var logger log.Logger
-	logger = log.New()
+	logger := log.New()
 
 	var jsonData WarpDataSourceOptions
 
-	var err = json.Unmarshal(ds.JSONData, &jsonData)
-	if err != nil {
+	if err := json.Unmarshal(ds.JSONData, &jsonData); err != nil {
 		logger.Error("Unmarshall json data error")
 	}
 
@@ -90,12 +88,11 @@ type Query struct {
 
 func (d *Datasource) query(_ context.Context, pCtx backend.PluginContext, query backend.DataQuery) backend.DataResponse {
 
-	var logger = log.New()
+	logger := log.New()
 	var qm Query
 
 	//Recup warpscript text
-	err := json.Unmarshal(query.JSON, &qm)
-	if err != nil {
+	if err := json.Unmarshal(query.JSON, &qm); err != nil {
 		var errStr = fmt.Sprintf("json unmarshal: %v", err.Error())
 		logger.Error(errStr)
 		return backend.ErrDataResponse(backend.StatusBadRequest, errStr)
