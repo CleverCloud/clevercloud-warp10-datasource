@@ -38,4 +38,9 @@ export interface WarpDataResult {
   v: number[][]
 }
 
+export type WarpVariableResult = WarpVariableResultEntry[] | WarpVariableResultEntry | Record<string, WarpVariableResultEntry>
+
+export type WarpVariableResultEntry = string | number
+
 export type WarpResult = WarpDataResult[] | WarpDataResult[][]
+
