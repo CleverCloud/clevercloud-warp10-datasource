@@ -3,6 +3,7 @@ import {
   DataQueryResponse,
   DataSourceInstanceSettings,
   FieldType,
+  MetricFindValue,
   MutableDataFrame,
   ScopedVars,
   TypedVariableModel
@@ -10,12 +11,13 @@ import {
 import {DataSourceWithBackend, FetchResponse, getBackendSrv, getTemplateSrv, TestingStatus} from '@grafana/runtime';
 
 import {catchError, from, lastValueFrom, map, mergeMap, Observable, tap} from 'rxjs';
+import {reduce} from 'rxjs/operators'
 
-import {ConstProp, WarpDataResult, WarpDataSourceOptions, WarpQuery, WarpResult} from './types';
+import {ConstProp, WarpDataResult, WarpDataSourceOptions, WarpQuery, WarpResult, WarpVariableResult} from './types';
 import {loader} from "@monaco-editor/react";
 
 import {languageConfig} from "editor/languagesConfig"
-import {isArray} from "lodash";
+import {isArray, isObject} from "lodash";
 
 export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceOptions> {
 
@@ -39,12 +41,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     console.log(instanceSettings.jsonData)
     super(instanceSettings);
     this.path = instanceSettings.jsonData.path ?? ""
-
-    // if(instanceSettings.jsonData.access?.toUpperCase() === "PROXY") {
-    //   this.access = "PROXY"
-    // } else {
-    //   this.access = "DIRECT"
-    // }
 
     this.access = instanceSettings.jsonData.access ?? 'DIRECT'
 
@@ -73,7 +69,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   applyTemplateVariables(query: WarpQuery, _scopedVars: ScopedVars): Record<string, any> {
     return {
       ...query,
-      queryText: this.computeTimeVars(this.request) + this.computeGrafanaContext() + query.queryText
+      queryText: this.computeTimeVars(this.request) + this.addDashboardVariables() + this.computeGrafanaContext() + query.queryText
     }
   }
 
@@ -177,8 +173,8 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * @param query
    * @return {Observable<FetchResponse<unknown>>} Response
    */
-  doRequest(query: WarpQuery) {
-    return getBackendSrv().fetch<WarpResult>(
+  doRequest<T = WarpResult>(query: WarpQuery) {
+    return getBackendSrv().fetch<T>(
       {
         url: this.path + "/api/v0/exec",
         method: "POST",
@@ -190,7 +186,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   }
 
   /**
-   * Compute Datasource constant, macro and templating variables, store it on top of the stack
+   * Compute Datasource constant and macro, store it on top of the stack
    * @return {string} WarpScript header
    */
   private computeGrafanaContext(): string {
@@ -209,8 +205,19 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       wsHeader += `${myMacro.value} '${myMacro.name}' STORE\n`;
     })
 
+    wsHeader += "LINEON\n";
+    return wsHeader
+  }
 
-    //Add Variables
+  /**
+   * Compute templating variables store it on top of the stack
+   * @return {string} WarpScript header
+   * @private
+   */
+  private addDashboardVariables(): string {
+
+    let wsHeader = ''
+
     const templateSrv = getTemplateSrv();
     this.var.forEach((myVar) => {
       const label = '${' + myVar.name + ':json}';
@@ -247,8 +254,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       }
     })
 
-
-    wsHeader += "LINEON\n";
     return wsHeader
   }
 
@@ -276,6 +281,46 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
 
     return str
   }
+
+  /**
+   * Management of query type dashboard variables
+   * @param query
+   * @param options
+   */
+  async metricFindQuery(query: string, options?: any): Promise<MetricFindValue[]> {
+
+    let warpQuery: WarpQuery = {refId: "", queryText: this.computeGrafanaContext()+query}
+
+    // Grafana can handle different text/value for the variable drop list. User has three possibilites in the WarpScript result:
+    // 1 - let a list on the stack : text = value for each entry.
+    // 2 - let a map on the stack : text = map key, value = map value. value will be used in the WarpScript variable.
+    // 3 - let some strings or numbers on the stack : it will be considered as a list, refer to case 1.
+    // Values could be strings or number, ignore other objects.
+
+
+    return lastValueFrom(this.doRequest<WarpVariableResult[]>(warpQuery)
+        .pipe(reduce<FetchResponse<WarpVariableResult[]>,MetricFindValue[]>((entries, res) => {
+          let tab: MetricFindValue[] = res.data.flatMap(elt => {
+                if(isArray(elt)){
+                  return elt.map(v => ({
+                    text: v.toString(),
+                    value: v.toString()
+                  }))
+                } else if (isObject(elt)) {
+                  return Object.entries(elt).map(([key, value]) => ({
+                    text: key.toString(),
+                    value: value.toString()
+                  }))
+                } else {
+                  return [{
+                    text: elt.toString(),
+                    value: elt.toString()
+                  }]
+                }
+              }
+          )
+          return entries.concat(tab)
+        }, []))
+    )}
+
 }
-
-
