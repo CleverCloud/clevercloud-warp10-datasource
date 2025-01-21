@@ -1,13 +1,13 @@
-import {DataSourceJsonData} from '@grafana/data';
-import {DataQuery} from '@grafana/schema'
+import { DataSourceJsonData } from '@grafana/data';
+import { DataQuery } from '@grafana/schema';
 
 export interface WarpQuery extends DataQuery {
   queryText: string;
 }
 
 export interface ConstProp {
-  name: string,
-  value: string
+  name: string;
+  value: string;
 }
 
 /**
@@ -31,16 +31,18 @@ export interface MySecureJsonData {
  * Result query interface for GTS
  */
 export interface WarpDataResult {
-  c: string,
-  l: any,
-  a: any,
-  la: number,
-  v: number[][]
+  c: string;
+  l: any;
+  a: any;
+  la: number;
+  v: number[][];
 }
 
-export type WarpVariableResult = WarpVariableResultEntry[] | WarpVariableResultEntry | Record<string, WarpVariableResultEntry>
+export type WarpVariableResult =
+  | WarpVariableResultEntry[]
+  | WarpVariableResultEntry
+  | Record<string, WarpVariableResultEntry>;
 
-export type WarpVariableResultEntry = string | number
+export type WarpVariableResultEntry = string | number;
 
-export type WarpResult = WarpDataResult[] | WarpDataResult[][]
-
+export type WarpResult = WarpDataResult[] | WarpDataResult[][];
