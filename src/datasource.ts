@@ -71,7 +71,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * NOTE: if you do modify the structure or use template variables, alerting queries may not work
    * as expected
    * */
-  applyTemplateVariables(query: WarpQuery, _scopedVars: ScopedVars): Record<string, any> {
+  applyTemplateVariables(query: WarpQuery, _scopedVars: ScopedVars): WarpQuery {
     return {
       ...query,
       queryText:
