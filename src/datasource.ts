@@ -13,11 +13,19 @@ import {DataSourceWithBackend, FetchResponse, getBackendSrv, getTemplateSrv, Tes
 import {catchError, from, lastValueFrom, map, mergeMap, Observable, tap} from 'rxjs';
 import {reduce} from 'rxjs/operators'
 
-import {ConstProp, WarpDataResult, WarpDataSourceOptions, WarpQuery, WarpResult, WarpVariableResult} from './types';
+import {
+  ConstProp,
+  WarpDataResult,
+  WarpDataSourceOptions,
+  WarpQuery,
+  WarpResult,
+  WarpVariableResult
+} from './types/types';
 import {loader} from "@monaco-editor/react";
 
 import {languageConfig} from "editor/languagesConfig"
 import {isArray, isObject} from "lodash";
+import {Table} from "./types/table";
 
 export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceOptions> {
 
@@ -67,9 +75,10 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * as expected
    * */
   applyTemplateVariables(query: WarpQuery, _scopedVars: ScopedVars): Record<string, any> {
+
     return {
       ...query,
-      queryText: this.computeTimeVars(this.request) + this.addDashboardVariables() + this.computeGrafanaContext() + query.queryText
+      queryText: this.computeTimeVars(this.request) + this.addDashboardVariables() + this.computeGrafanaContext() + this.computePanelRepeatVars(_scopedVars) + query.queryText
     }
   }
 
@@ -91,14 +100,14 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     const query = lastValueFrom(this.doRequest({refId: "", queryText: "1 2 +"}))
 
     await query.then((value) => {
-        if (value.status === 200) {
-          message = "Datasource is working"
-          status = "Ok"
-        } else {
-          message = "An error has occurred"
-          status = "Error"
+          if (value.status === 200) {
+            message = "Datasource is working"
+            status = "Ok"
+          } else {
+            message = "An error has occurred"
+            status = "Error"
+          }
         }
-      }
     ).catch(() => {
       message = "An error has occurred"
       status = "Error"
@@ -119,49 +128,89 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   }
 
   queryDirect(request: DataQueryRequest<WarpQuery>): Observable<DataQueryResponse> {
-
-    console.log("Front")
-
     const observableQueries = from(request.targets)
 
     return observableQueries.pipe(
-      //replacing constants
-      map(query => (this.applyTemplateVariables(query, request.scopedVars)) as WarpQuery),
+        //replacing constants
+        map(query => (this.applyTemplateVariables(query, request.scopedVars)) as WarpQuery),
 
-      //doing query
-      mergeMap(query => this.doRequest(query)),
-      tap(request => console.log(request)),
+        //doing query
+        mergeMap(query => {
+          return this.doRequest(query)
+        }),
+        tap(request => console.log("request", request)),
 
-      //creating dataframe
-      map((response: FetchResponse<WarpResult>): DataQueryResponse => {
+        //creating dataframe
+        map((response: FetchResponse<WarpResult>): DataQueryResponse => {
 
-        let dataFrames;
-        if (isArray(response.data[0])) {
-          dataFrames = response.data[0].map((d: WarpDataResult) => this.createDataFrame(d))
-        } else {
-          dataFrames = [this.createDataFrame(response.data[0])]
-        }
-        console.log(dataFrames)
-        return {
-          data: dataFrames
-        }
-      }),
-      catchError((error, _) => {
-        console.log(error)
-        throw error
-      })
+          // is it for a Table graph ?
+          if (response.data.length === 1 && response.data[0] && Table.isTable(response.data[0])) {
+            const d: Table = response.data[0] as unknown as Table;
+            return {
+              data: this.createDataFrameFromTable(d)
+            }
+          }
+
+          const refId: string= (request.targets[0] || {}).refId ?? "";
+          let dataFrames;
+          if (isArray(response.data[0])) {
+            dataFrames = response.data[0].map((d: WarpDataResult) => this.createDataFrame(refId, d))
+          } else {
+            dataFrames = [this.createDataFrame(refId, response.data[0])]
+          }
+
+          return {
+            data: dataFrames
+          }
+        }),
+        catchError((error, _) => {
+          console.log("error", error);
+          throw error
+        })
     )
   }
 
-  createDataFrame(d: WarpDataResult) {
+  createDataFrameFromTable(d: Table) {
+    return [new MutableDataFrame({
+      // @ts-ignore : should return this kind of object to be compatible to ovh plugin
+      fields: d.columns.map((c, index) => {
+
+        let obj =  {
+          name: c.text,
+          config: {},
+          type: c.type,
+          values: d.rows.map(r => r[index])
+        };
+
+        if (c.sort && c.desc) {
+          obj = {
+            ...obj,
+            config: {
+              sort: c.sort,
+              desc: c.desc
+            }
+          }
+        }
+
+        return obj;
+      }),
+    })]
+  }
+
+  createDataFrame(refId: string, d: WarpDataResult) {
     return new MutableDataFrame({
-      refId: d.l.host || "",
+      refId: refId,
+      name: d.c || "",
       fields: [
-        {name: 'Time', type: FieldType.time, values: d.v.map(point => point[0] / 1000)},
+        {
+          name: 'Time',
+          type: FieldType.time,
+          values: d.v.map(point => point[0] / 1000)
+        },
         {
           name: 'Value',
           type: FieldType.number || FieldType.string,
-          labels: d.l, values: d.v.map(point => point[point.length - 1])
+          values: d.v.map(point => point[point.length - 1])
         },
       ],
 
@@ -175,14 +224,50 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    */
   doRequest<T = WarpResult>(query: WarpQuery) {
     return getBackendSrv().fetch<T>(
-      {
-        url: this.path + "/api/v0/exec",
-        method: "POST",
-        data: query.queryText,
-        headers: [['Accept', "undefined"], ['Content-Type', 'text/plain; charset=UTF-8']],
-        responseType: "json"
-      }
+        {
+          url: this.path + "/api/v0/exec",
+          method: "POST",
+          data: query.queryText,
+          headers: [['Accept', "undefined"], ['Content-Type', 'text/plain; charset=UTF-8']],
+          responseType: "json"
+        }
     )
+  }
+
+
+
+
+  private computePanelRepeatVars(scopedVars: any): string {
+    let str = '';
+    if (scopedVars) {
+      for (let k in scopedVars) {
+        let v = scopedVars[k]
+
+        if (v.selected || this.scopedVarIsAll(k)) {
+          str += `'${v.value}' '${k}' STORE \n`
+        }
+      }
+    }
+
+    return str
+  }
+
+
+  /**
+   * Test if a named scoped variable is set to all
+   *
+   * @param name string The name of scoped variable
+   * @return bool If the scoped variable is set to all
+   */
+  private scopedVarIsAll(name: string): boolean {
+    for (let i = 0; i < this.var.length; i++) {
+      const v = this.var[i] as any;
+      if (v.name === name && v.current.value.length === 1 && v.current.value[0] === '$__all') {
+        return true
+      }
+    }
+
+    return false
   }
 
   /**
@@ -190,14 +275,11 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * @return {string} WarpScript header
    */
   private computeGrafanaContext(): string {
-
     let wsHeader = ''
 
     //Add constants
     this.const.forEach((myVar) => {
-
       wsHeader += `'${myVar.value}' '${myVar.name}' STORE\n`;
-
     })
 
     //Add macros
@@ -215,46 +297,70 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * @private
    */
   private addDashboardVariables(): string {
-
     let wsHeader = ''
 
-    const templateSrv = getTemplateSrv();
-    this.var.forEach((myVar) => {
-      const label = '${' + myVar.name + ':json}';
-      let val = templateSrv.replace(label);
-
-      //Variable multi
-      if (val[0] === "[") {
-        let valList = JSON.parse(val)
-        let valListChar = "[ "
-        valList.forEach((x: string) => {
-
-          //string
-          if (!isNaN(+x)) {
-            valListChar += x + " "
-
-            //int
-          } else {
-            valListChar += "'" + x + "' "
-          }
-        })
-        valListChar += "]"
-
-        wsHeader += `${valListChar} '${myVar.name}' STORE\n`;
-      } else {
-
-        //string
-        if (isNaN(+val)) {
-          wsHeader += `'${val}' '${myVar.name}' STORE\n`;
-
-          //int
-        } else {
-          wsHeader += `${val} '${myVar.name}' STORE\n`;
-        }
-      }
-    })
+    getTemplateSrv().getVariables().forEach(myvar => {
+      wsHeader += this.processDashboardVariable(myvar);
+    });
 
     return wsHeader
+  }
+
+  private processDashboardVariable(myVar: any): string {
+    let wsHeadertoAdd = "";
+
+    const value = myVar.current.value;
+
+    if (((Array.isArray(value) && (value.length === 1 && value[0] === '$__all')) || value === "$__all")) {
+      console.log("User checked the \"select all\" checkbox")
+
+      // User checked the "select all" checkbox
+      if (myVar.allValue && myVar.allValue !== "") {
+        console.log("User checked the \"select all\" checkbox custom value")
+
+        // User also defined a custom value in the variable settings
+        const customValue: String = myVar.allValue;
+        wsHeadertoAdd += `[ '${customValue}' ] '${myVar.name}_list' STORE\n`
+        // custom all value is taken as it is. User may or may not use a regexp.
+        wsHeadertoAdd += ` '${customValue}' '${myVar.name}' STORE\n`
+      } else {
+        console.log("User checked the \"select all\" NO custom value");
+
+        // if no custom all value is defined :
+        // it means we shall create a list of all the values in WarpScript from options, ignoring "$__all" special option value.
+        const allValues: String[] = myVar.options
+            .filter((o: { value: string; }) => o.value !== "$__all")
+            .map((o: { value: any; }) => o.value);
+        wsHeadertoAdd += `[ ${allValues.map(s => `'${s}'`).join(" ")} ] '${myVar.name}_list' STORE\n`; // all is stored as string in generated WarpScript.
+        // create a ready to use regexp in the variable
+        wsHeadertoAdd += ` '~' $${myVar.name}_list REOPTALT + '${myVar.name}' STORE\n`
+      }
+    } else if (Array.isArray(value)) {
+      console.log("user checks several choices")
+
+      // user checks several choices
+      wsHeadertoAdd += `[ ${value.map(s => `'${s}'`).join(" ")} ] '${myVar.name}_list' STORE\n`; // all is stored as string in generated WarpScript.
+      if (1 === value.length) {
+        console.log("one value checked");
+
+        // one value checked : copy it as it is in WarpScript variable
+        wsHeadertoAdd += ` '${value[0]}' '${myVar.name}' STORE\n`
+      } else {
+        console.log("several value checked");
+
+        // several values checked : do a regexp
+        //also create a ready to use regexp, suffixed by _wsregexp
+        wsHeadertoAdd += ` '~' $${myVar.name}_list REOPTALT + '${myVar.name}' STORE\n`
+      }
+    } else {
+      console.log("no multiple selection, variable is the string.");
+
+      // no multiple selection, variable is the string. As type is lost by Grafana, there is no safe way to assume something different than a string here.
+      // List is also created to create scripts compatible whatever the defined selection mode
+      wsHeadertoAdd += `[ '${value}' ] '${myVar.name}_list' STORE\n`;
+      wsHeadertoAdd += `'${value}' '${myVar.name}' STORE\n`;
+    }
+    return(wsHeadertoAdd);
   }
 
 
@@ -264,6 +370,8 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * @private
    */
   private computeTimeVars(request: DataQueryRequest<WarpQuery>): string {
+    console.log("computeTimeVars");
+
     let vars: any = {
       start: request.range.from.toDate().getTime() * 1000,
       startISO: request.range.from.toISOString(),
@@ -288,16 +396,18 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * @param options
    */
   async metricFindQuery(query: string, options?: any): Promise<MetricFindValue[]> {
+    console.log("metricFindQuery");
 
-    let warpQuery: WarpQuery = {refId: "", queryText: this.computeGrafanaContext()+query}
+    console.log("metricFindQuery options", options);
+
+    let warpQuery: WarpQuery = {refId: "", queryText: this.addDashboardVariables() + this.computeGrafanaContext() + query}
+    console.log("metricFindQuery warpQuery", warpQuery);
 
     // Grafana can handle different text/value for the variable drop list. User has three possibilites in the WarpScript result:
     // 1 - let a list on the stack : text = value for each entry.
     // 2 - let a map on the stack : text = map key, value = map value. value will be used in the WarpScript variable.
     // 3 - let some strings or numbers on the stack : it will be considered as a list, refer to case 1.
     // Values could be strings or number, ignore other objects.
-
-
     return lastValueFrom(this.doRequest<WarpVariableResult[]>(warpQuery)
         .pipe(reduce<FetchResponse<WarpVariableResult[]>,MetricFindValue[]>((entries, res) => {
           let tab: MetricFindValue[] = res.data.flatMap(elt => {
@@ -319,8 +429,10 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
                 }
               }
           )
+          console.log("in metricFindQuery entries", entries);
           return entries.concat(tab)
         }, []))
-    )}
+    );
+  }
 
 }

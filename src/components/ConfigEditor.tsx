@@ -1,7 +1,7 @@
 import React, {ChangeEvent, useState} from 'react';
 import {ActionMeta, Button, Card, IconButton, InlineField, Input, Select, TextArea} from '@grafana/ui';
 import {DataSourcePluginOptionsEditorProps, SelectableValue} from '@grafana/data';
-import {ConstProp, WarpDataSourceOptions} from '../types';
+import {ConstProp, WarpDataSourceOptions} from '../types/types';
 import {Editor, loader} from "@monaco-editor/react";
 import {languageConfig} from "../editor/languagesConfig";
 
@@ -195,7 +195,7 @@ export function ConfigEditor(props: Props) {
               {value: 'DIRECT', label: 'direct'},
               {value: 'PROXY', label: 'proxy'}
             ]}
-            // value={options.jsonData.access === Access.DIRECT ? 'DIRECT' : 'PROXY'}
+            value={options.jsonData.access === 'DIRECT' ? 'DIRECT' : 'PROXY'}
             onChange={onAccessChange}
             width={60}
             id={"select"}

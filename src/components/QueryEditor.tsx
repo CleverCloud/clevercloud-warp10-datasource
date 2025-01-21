@@ -1,7 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {QueryEditorProps} from '@grafana/data';
 import {DataSource} from '../datasource';
-import {WarpDataSourceOptions, WarpQuery} from '../types';
+import {WarpDataSourceOptions, WarpQuery} from '../types/types';
 import {Editor} from "@monaco-editor/react";
 import {debounceTime, tap, Subject} from 'rxjs';
 
