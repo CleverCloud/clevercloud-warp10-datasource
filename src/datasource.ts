@@ -74,12 +74,12 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   applyTemplateVariables(query: WarpQuery, _scopedVars: ScopedVars): WarpQuery {
     return {
       ...query,
-      queryText:
+      expr:
         this.computeTimeVars(this.request) +
         this.addDashboardVariables() +
         this.computeGrafanaContext() +
         this.computePanelRepeatVars(_scopedVars) +
-        query.queryText,
+        query.expr,
     };
   }
 
@@ -95,7 +95,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     let message = '';
     let status = '';
 
-    const query = lastValueFrom(this.doRequest({ refId: '', queryText: '1 2 +' }));
+    const query = lastValueFrom(this.doRequest({ refId: '', expr: '1 2 +' }));
 
     await query
       .then((value) => {
@@ -120,7 +120,30 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   }
 
   query(request: DataQueryRequest<WarpQuery>): Observable<DataQueryResponse> {
+    // fix to make progressive change in Grafana Corp
+    // Previous version of these plugin as already be deployed
+    // this support previous plugin's data structure version
+    // @ts-ignore
+    request.targets = request.targets.map((t) => {
+      if (!t.expr || t.expr === '') {
+        console.warn('Deprecate request detected');
+        // @ts-ignore
+        t.expr = t.queryText;
+      }
+      return t;
+    });
+
     this.request = request;
+
+    // apply headers for proxy mode
+    if (this.access === 'PROXY') {
+      const query: WarpQuery = {
+        expr: request.targets[0].expr,
+        refId: request.targets[0].refId,
+      };
+      request.targets[0] = this.applyTemplateVariables(query, request.scopedVars);
+    }
+
     return this.access === 'DIRECT' ? this.queryDirect(request) : super.query(request);
   }
 
@@ -148,12 +171,14 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
         }
 
         const refId: string = (request.targets[0] || {}).refId ?? '';
-        let dataFrames;
-        if (isArray(response.data[0])) {
-          dataFrames = response.data[0].map((d: WarpDataResult) => this.createDataFrame(refId, d));
-        } else {
-          dataFrames = [this.createDataFrame(refId, response.data[0])];
-        }
+        let dataFrames: MutableDataFrame[] = [];
+        response.data.map((elt) => {
+          if (isArray(elt)) {
+            dataFrames = [...dataFrames, ...elt.map((d: WarpDataResult) => this.createDataFrame(refId, d))];
+          } else {
+            dataFrames = [...dataFrames, this.createDataFrame(refId, elt)];
+          }
+        });
 
         return {
           data: dataFrames,
@@ -194,7 +219,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     ];
   }
 
-  createDataFrame(refId: string, d: WarpDataResult) {
+  createDataFrame(refId: string, d: WarpDataResult): MutableDataFrame {
     return new MutableDataFrame({
       refId: refId,
       name: d.c || '',
@@ -222,7 +247,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     return getBackendSrv().fetch<T>({
       url: this.path + '/api/v0/exec',
       method: 'POST',
-      data: query.queryText,
+      data: query.expr,
       headers: [
         ['Accept', 'undefined'],
         ['Content-Type', 'text/plain; charset=UTF-8'],
@@ -307,20 +332,14 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     const value = myVar.current.value;
 
     if ((Array.isArray(value) && value.length === 1 && value[0] === '$__all') || value === '$__all') {
-      console.log('User checked the "select all" checkbox');
-
       // User checked the "select all" checkbox
       if (myVar.allValue && myVar.allValue !== '') {
-        console.log('User checked the "select all" checkbox custom value');
-
         // User also defined a custom value in the variable settings
         const customValue: String = myVar.allValue;
         wsHeadertoAdd += `[ '${customValue}' ] '${myVar.name}_list' STORE\n`;
         // custom all value is taken as it is. User may or may not use a regexp.
         wsHeadertoAdd += ` '${customValue}' '${myVar.name}' STORE\n`;
       } else {
-        console.log('User checked the "select all" NO custom value');
-
         // if no custom all value is defined :
         // it means we shall create a list of all the values in WarpScript from options, ignoring "$__all" special option value.
         const allValues: String[] = myVar.options
@@ -331,25 +350,17 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
         wsHeadertoAdd += ` '~' $${myVar.name}_list REOPTALT + '${myVar.name}' STORE\n`;
       }
     } else if (Array.isArray(value)) {
-      console.log('user checks several choices');
-
       // user checks several choices
       wsHeadertoAdd += `[ ${value.map((s) => `'${s}'`).join(' ')} ] '${myVar.name}_list' STORE\n`; // all is stored as string in generated WarpScript.
       if (1 === value.length) {
-        console.log('one value checked');
-
         // one value checked : copy it as it is in WarpScript variable
         wsHeadertoAdd += ` '${value[0]}' '${myVar.name}' STORE\n`;
       } else {
-        console.log('several value checked');
-
         // several values checked : do a regexp
         //also create a ready to use regexp, suffixed by _wsregexp
         wsHeadertoAdd += ` '~' $${myVar.name}_list REOPTALT + '${myVar.name}' STORE\n`;
       }
     } else {
-      console.log('no multiple selection, variable is the string.');
-
       // no multiple selection, variable is the string. As type is lost by Grafana, there is no safe way to assume something different than a string here.
       // List is also created to create scripts compatible whatever the defined selection mode
       wsHeadertoAdd += `[ '${value}' ] '${myVar.name}_list' STORE\n`;
@@ -364,8 +375,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * @private
    */
   private computeTimeVars(request: DataQueryRequest<WarpQuery>): string {
-    console.log('computeTimeVars');
-
     let vars: any = {
       start: request.range.from.toDate().getTime() * 1000,
       startISO: request.range.from.toISOString(),
@@ -390,15 +399,10 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * @param options
    */
   async metricFindQuery(query: string, options?: any): Promise<MetricFindValue[]> {
-    console.log('metricFindQuery');
-
-    console.log('metricFindQuery options', options);
-
     let warpQuery: WarpQuery = {
       refId: '',
-      queryText: this.addDashboardVariables() + this.computeGrafanaContext() + query,
+      expr: this.addDashboardVariables() + this.computeGrafanaContext() + query,
     };
-    console.log('metricFindQuery warpQuery', warpQuery);
 
     // Grafana can handle different text/value for the variable drop list. User has three possibilites in the WarpScript result:
     // 1 - let a list on the stack : text = value for each entry.
@@ -428,7 +432,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
               ];
             }
           });
-          console.log('in metricFindQuery entries', entries);
           return entries.concat(tab);
         }, [])
       )

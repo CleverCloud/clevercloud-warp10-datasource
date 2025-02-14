@@ -16,10 +16,19 @@ function nbrLinesText(text: string | undefined) {
 }
 
 export function QueryEditor({ query, onChange, onRunQuery }: Props) {
-  const { queryText } = query;
+  let { expr } = query;
+
+  // fix to make progressive change in Grafana
+  // Previous version of these plugin as already be deployed
+  // this support previous plugin's data structure version
+  if (!expr || expr === '') {
+      console.warn("Deprecate request detected");
+    // @ts-ignore
+      expr = query.queryText;
+  }
 
   //height management variable
-  let [heightEditor, setHeightEditor] = useState(nbrLinesText(queryText) * 20);
+  let [heightEditor, setHeightEditor] = useState(nbrLinesText(expr) * 20);
 
   //operations changes
   let [subject, _a] = useState(new Subject<string | undefined>());
@@ -34,7 +43,7 @@ export function QueryEditor({ query, onChange, onRunQuery }: Props) {
           setHeightEditor(nbrLine * 20);
         }
 
-        onChange({ ...query, queryText: value ?? '' });
+        onChange({ ...query, expr: value ?? '' });
       }),
       debounceTime(2000)
     )
@@ -45,7 +54,7 @@ export function QueryEditor({ query, onChange, onRunQuery }: Props) {
     return () => subscription.unsubscribe();
   }, [onChangeObservable, onRunQuery]);
 
-  const onQueryTextChange = (value: string | undefined) => {
+  const onExprChange = (value: string | undefined) => {
     subject.next(value);
   };
 
@@ -56,8 +65,8 @@ export function QueryEditor({ query, onChange, onRunQuery }: Props) {
         defaultLanguage="Warp10"
         theme="grafanaTheme"
         defaultValue=""
-        value={queryText}
-        onChange={onQueryTextChange}
+        value={expr}
+        onChange={onExprChange}
         options={{
           scrollBeyondLastLine: false,
           minimap: {

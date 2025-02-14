@@ -2,7 +2,7 @@ import { DataSourceJsonData } from '@grafana/data';
 import { DataQuery } from '@grafana/schema';
 
 export interface WarpQuery extends DataQuery {
-  queryText: string;
+  expr: string;
 }
 
 export interface ConstProp {
@@ -45,4 +45,4 @@ export type WarpVariableResult =
 
 export type WarpVariableResultEntry = string | number;
 
-export type WarpResult = WarpDataResult[] | WarpDataResult[][];
+export type WarpResult = WarpDataResult[] | WarpDataResult[][] | (WarpDataResult[] | WarpDataResult[][]);

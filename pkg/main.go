@@ -3,9 +3,9 @@ package main
 import (
 	"os"
 
+	"github.com/clever-cloud/warp10/pkg/plugin"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
-	"github.com/clever-cloud/warp10/pkg/plugin"
 )
 
 func main() {
