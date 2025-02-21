@@ -21,9 +21,7 @@ import {
   WarpResult,
   WarpVariableResult,
 } from './types/types';
-import { loader } from '@monaco-editor/react';
 
-import { languageConfig } from 'editor/languagesConfig';
 import { isArray, isObject } from 'lodash';
 import { Table } from './types/table';
 
@@ -56,15 +54,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     this.macro = instanceSettings.jsonData.macro ?? [];
 
     this.var = getTemplateSrv().getVariables();
-
-    const constantsPerso = this.const.map((c) => '$' + c.name);
-    const macrosPerso = this.macro.map((c) => '@' + c.name);
-    const varPerso = this.var.map((c) => '$' + c.name);
-
-    //Warp10 language initialization
-    loader.init().then((monaco) => {
-      languageConfig(monaco, constantsPerso, macrosPerso, varPerso);
-    });
   }
 
   /**
@@ -125,7 +114,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     // this support previous plugin's data structure version
     // @ts-ignore
     request.targets = request.targets.map((t) => {
-      if (!t.expr || t.expr === '') {
+      if (!t.expr && t.expr !== '') {
         console.warn('Deprecate request detected');
         // @ts-ignore
         t.expr = t.queryText;

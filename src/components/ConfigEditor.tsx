@@ -2,14 +2,8 @@ import React, { ChangeEvent, useState } from 'react';
 import { ActionMeta, Button, Card, IconButton, InlineField, Input, Select, TextArea } from '@grafana/ui';
 import { DataSourcePluginOptionsEditorProps, SelectableValue } from '@grafana/data';
 import { ConstProp, WarpDataSourceOptions } from '../types/types';
-import { Editor, loader } from '@monaco-editor/react';
-import { languageConfig } from '../editor/languagesConfig';
 
 interface Props extends DataSourcePluginOptionsEditorProps<WarpDataSourceOptions> {}
-
-function nbrLinesText(text: string | undefined) {
-  return [...(text ?? '')].filter((x) => x === '\n').length + 1;
-}
 
 export function ConfigEditor(props: Props) {
   const { onOptionsChange, options } = props;
@@ -21,14 +15,6 @@ export function ConfigEditor(props: Props) {
   //Var new constant
   let [nameMacro, setNameMacro] = useState('');
   let [valueMacro, setValueMacro] = useState('');
-
-  //height management variable
-  let [heightEditor, setHeightEditor] = useState(nbrLinesText(valueMacro) * 20);
-
-  //Warp10 language initialization
-  loader.init().then((monaco) => {
-    languageConfig(monaco, [], [], []);
-  });
 
   //Modification input URL
   const onPathChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -66,14 +52,8 @@ export function ConfigEditor(props: Props) {
   };
 
   //Modification input value of the new macro
-  const onValueMacroChange = (value: string | undefined) => {
-    setValueMacro(value ?? '');
-    const nbrLine = nbrLinesText(value);
-    if (nbrLine > 10) {
-      setHeightEditor(200);
-    } else {
-      setHeightEditor(nbrLine * 20);
-    }
+  const onValueMacroChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    setValueMacro(event.target.value ?? '');
   };
 
   //Add new constant
@@ -236,23 +216,9 @@ export function ConfigEditor(props: Props) {
         <InlineField label="Name" labelWidth={12}>
           <Input width={119} onChange={onNameMacroChange} value={nameMacro} />
         </InlineField>
-        <div className="gf-form" style={{ border: 'solid 1px #2e3136', width: 1052 }}>
-          <Editor
-            height={heightEditor}
-            defaultLanguage="Warp10"
-            theme="grafanaTheme"
-            defaultValue=""
-            value={valueMacro}
-            onChange={onValueMacroChange}
-            options={{
-              scrollBeyondLastLine: false,
-              minimap: {
-                enabled: false,
-              },
-            }}
-          />
-        </div>
-
+        <InlineField label="Value" labelWidth={12}>
+          <TextArea cols={100} onChange={onValueMacroChange} value={valueMacro} />
+        </InlineField>
         <Button variant="primary" onClick={addMacro}>
           Add
         </Button>
