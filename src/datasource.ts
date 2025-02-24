@@ -109,7 +109,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   }
 
   query(request: DataQueryRequest<WarpQuery>): Observable<DataQueryResponse> {
-    // fix to make progressive change in Grafana Corp
+    // Fix to make the change progressive in Grafana
     // Previous version of these plugin as already be deployed
     // this support previous plugin's data structure version
     // @ts-ignore
