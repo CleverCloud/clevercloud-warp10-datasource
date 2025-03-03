@@ -10,7 +10,7 @@ import {
 } from '@grafana/data';
 import { DataSourceWithBackend, FetchResponse, getBackendSrv, getTemplateSrv, TestingStatus } from '@grafana/runtime';
 
-import { catchError, from, lastValueFrom, map, mergeMap, Observable, tap } from 'rxjs';
+import { catchError, from, lastValueFrom, map, mergeMap, Observable } from 'rxjs';
 import { reduce } from 'rxjs/operators';
 
 import {
@@ -43,7 +43,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * @param instanceSettings
    */
   constructor(instanceSettings: DataSourceInstanceSettings<WarpDataSourceOptions>) {
-    console.log(instanceSettings.jsonData);
     super(instanceSettings);
     this.path = instanceSettings.jsonData.path ?? '';
 
@@ -147,7 +146,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       mergeMap((query) => {
         return this.doRequest(query);
       }),
-      tap((request) => console.log('request', request)),
 
       //creating dataframe
       map((response: FetchResponse<WarpResult>): DataQueryResponse => {
