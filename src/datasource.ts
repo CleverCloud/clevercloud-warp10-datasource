@@ -46,7 +46,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     super(instanceSettings);
     this.path = instanceSettings.jsonData.path ?? '';
 
-    this.access = instanceSettings.jsonData.access ?? 'DIRECT';
+    this.access = instanceSettings.jsonData.access ?? 'PROXY';
 
     this.const = instanceSettings.jsonData.const ?? [];
 
