@@ -10,7 +10,7 @@ import {
 } from '@grafana/data';
 import { DataSourceWithBackend, FetchResponse, getBackendSrv, getTemplateSrv, TestingStatus } from '@grafana/runtime';
 
-import { catchError, from, lastValueFrom, map, mergeMap, Observable } from 'rxjs';
+import { catchError, from, lastValueFrom, map, mergeMap, Observable, tap } from 'rxjs';
 import { reduce } from 'rxjs/operators';
 
 import {
@@ -362,12 +362,27 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * @private
    */
   private computeTimeVars(request: DataQueryRequest<WarpQuery>): string {
-    let vars: any = {
-      start: request.range.from.toDate().getTime() * 1000,
-      startISO: request.range.from.toISOString(),
-      end: request.range.to.toDate().getTime() * 1000,
-      endISO: request.range.to.toISOString(),
-    };
+    let vars: any = {};
+
+    // computeTimeVars comes from this.query()
+    // If the method is called from Grafana the request.range field is well formed
+    // but if the request is called from metricFindQuery() because you are in proxy mode, we need to give fake data to make it through backend server
+    try {
+      vars = {
+        start: request.range.from.toDate().getTime() * 1000,
+        startISO: request.range.from.toISOString(),
+        end: request.range.to.toDate().getTime() * 1000,
+        endISO: request.range.to.toISOString(),
+      };
+    } catch (error) {
+      vars = {
+        start: (request.range.from as unknown as Date).getTime() * 1000,
+        startISO: (request.range.from as unknown as Date).toISOString(),
+        end: (request.range.to as unknown as Date).getTime() * 1000,
+        endISO: (request.range.to as unknown as Date).toISOString(),
+      };
+    }
+
     vars.interval = vars.end - vars.start;
     vars.__interval = Math.floor(vars.interval / (request.maxDataPoints || 1));
     vars.__interval_ms = Math.floor(vars.__interval / 1000);
@@ -390,6 +405,57 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       refId: '',
       expr: this.addDashboardVariables() + this.computeGrafanaContext() + query,
     };
+
+    if (this.access === 'PROXY') {
+      const query = this.query({
+        targets: [warpQuery],
+        scopedVars: {},
+        range: {
+          from: new Date(),
+          to: new Date(Date.now() + 3600 * 1000),
+          raw: {
+            from: new Date(),
+            to: new Date(Date.now() + 3600 * 1000),
+          },
+        },
+      } as unknown as DataQueryRequest<WarpQuery>).pipe(
+        tap((value) => console.log('value in super.request()', value)),
+        map((value) => {
+          return value?.data.flatMap((frame) => {
+            return frame.fields.flatMap((field: any) => {
+              if (field.values) {
+                const elt = field.values;
+
+                if (isArray(elt)) {
+                  return elt.map((v) => ({
+                    text: v.toString(),
+                    value: v.toString(),
+                  }));
+                } else if (isObject(elt)) {
+                  return Object.entries(elt).map(([key, value]) => ({
+                    text: key.toString(),
+                    value: value.toString(),
+                  }));
+                } else {
+                  return [
+                    {
+                      text: elt.toString(),
+                      value: elt.toString(),
+                    },
+                  ];
+                }
+              } else {
+                return [];
+              }
+            });
+          });
+        })
+      );
+
+      const res: MetricFindValue[] = await lastValueFrom(query);
+      console.log('2nd method obsvResp res', res);
+      return res;
+    }
 
     // Grafana can handle different text/value for the variable drop list. User has three possibilites in the WarpScript result:
     // 1 - let a list on the stack : text = value for each entry.
@@ -420,7 +486,11 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
             }
           });
           return entries.concat(tab);
-        }, [])
+        }, []),
+
+        tap((value) => {
+          console.log('metricFindQuery entries', value);
+        })
       )
     );
   }

@@ -111,12 +111,14 @@ func (d *Datasource) query(_ context.Context, pCtx backend.PluginContext, query 
 
 	/*
 		Supported reponse types are:
+		- Array of String,Int64,Float64
+		- String, Int64, Float64 element
 		- Array of GTS: [ {...}, {...}, ... ]
 		- Array of array GTS: [ [{...}, {...}, ...] ]
 		- Table: [{ columns: [...], rows: [...] }]
 		- Nested List: [  [ {...}, {...}, ... ], {...}, ... ]
-
 	*/
+
 	//Recup GTSList of the response body
 	var gtsList b.GTSList
 
@@ -173,7 +175,7 @@ func (d *Datasource) query(_ context.Context, pCtx backend.PluginContext, query 
 		}
 	}
 
-	// If the result if an array made of GTS or GTSList
+	// If the result is an array made of GTS or GTSList
 	gtsList = b.GTSList{}
 	result := gjson.GetBytes(body, "@flatten")
 	var raw []byte
@@ -185,81 +187,180 @@ func (d *Datasource) query(_ context.Context, pCtx backend.PluginContext, query 
 
 	if err = json.Unmarshal([]byte(raw), &gtsList); err != nil {
 		var errStr = fmt.Sprintf("json unmarshal: %v", err.Error())
-		logger.Error("flatten error", errStr)
-	}
+		logger.Error("Flatten error", errStr)
+	} else {
+		//Frames creation
+		var frames = make(data.Frames, len(gtsList))
+		var wg sync.WaitGroup
+		var mu sync.Mutex
 
-	//Frames creation
-	var frames = make(data.Frames, len(gtsList))
-	var wg sync.WaitGroup
-	var mu sync.Mutex
+		for idx, gts := range gtsList {
+			wg.Add(1)
 
-	for idx, gts := range gtsList {
-		wg.Add(1)
+			idx := idx
+			go func(gts *b.GTS) {
+				defer wg.Done()
 
-		idx := idx
-		go func(gts *b.GTS) {
-			defer wg.Done()
+				//Data tab creation
+				var vTimes = make([]time.Time, len(gts.Values))
+				var vValueFloat []float64
+				var vValueString []string
+				var vValueInt []int64
 
-			//Data tab creation
-			var vTimes = make([]time.Time, len(gts.Values))
-			var vValueFloat []float64
-			var vValueString []string
-			var vValueInt []int64
-
-			//Data type check ( 0 - float / 1 - string / 2 - int )
-			t := 0
-			for _, values := range gts.Values {
-				switch values[len(values)-1].(type) {
-				case string:
-					t = 1
-				case int:
-					if t != 1 {
-						t = 2
+				//Data type check ( 0 - float / 1 - string / 2 - int )
+				t := 0
+				for _, values := range gts.Values {
+					switch values[len(values)-1].(type) {
+					case string:
+						t = 1
+					case int:
+						if t != 1 {
+							t = 2
+						}
 					}
 				}
-			}
 
-			//Add data to tab
-			for i, values := range gts.Values {
-				switch epoch := values[0].(type) {
-				case float64:
-					vTimes[i] = timeFromFloat64(epoch)
-					if t == 0 {
-						vValueFloat = append(vValueFloat, values[len(values)-1].(float64))
-					} else if t == 1 {
-						vValueString = append(vValueString, values[len(values)-1].(string))
-					} else {
-						vValueInt = append(vValueInt, values[len(values)-1].(int64))
+				//Add data to tab
+				for i, values := range gts.Values {
+					switch epoch := values[0].(type) {
+					case float64:
+						vTimes[i] = timeFromFloat64(epoch)
+						if t == 0 {
+							vValueFloat = append(vValueFloat, values[len(values)-1].(float64))
+						} else if t == 1 {
+							vValueString = append(vValueString, values[len(values)-1].(string))
+						} else {
+							vValueInt = append(vValueInt, values[len(values)-1].(int64))
+						}
+					default:
+						var errStr = fmt.Sprintf("epoch read: %v", epoch)
+						logger.Error(errStr)
 					}
-				default:
-					var errStr = fmt.Sprintf("epoch read: %v", epoch)
-					logger.Error(errStr)
 				}
-			}
 
-			//Fields creation
-			var fieldValue *data.Field
-			if t == 0 {
-				fieldValue = data.NewField(gts.ClassName, nil, vValueFloat)
-			} else if t == 1 {
-				fieldValue = data.NewField(gts.ClassName, nil, vValueString)
-			} else {
-				fieldValue = data.NewField(gts.ClassName, nil, vValueInt)
-			}
+				//Fields creation
+				var fieldValue *data.Field
+				if t == 0 {
+					fieldValue = data.NewField(gts.ClassName, nil, vValueFloat)
+				} else if t == 1 {
+					fieldValue = data.NewField(gts.ClassName, nil, vValueString)
+				} else {
+					fieldValue = data.NewField(gts.ClassName, nil, vValueInt)
+				}
 
-			// add the field to the response.
-			mu.Lock()
-			frames[idx] = data.NewFrame(gts.ClassName,
-				data.NewField("time", nil, vTimes),
-				fieldValue,
-			)
-			mu.Unlock()
-		}(gts)
+				// add the field to the response.
+				mu.Lock()
+				frames[idx] = data.NewFrame(gts.ClassName,
+					data.NewField("time", nil, vTimes),
+					fieldValue,
+				)
+				mu.Unlock()
+			}(gts)
+		}
+
+		wg.Wait()
+
+		return backend.DataResponse{Frames: frames}
 	}
 
-	wg.Wait()
+	// if response is an array
+	var warp10ArrayResult [][]interface{}
+	if err = json.Unmarshal(body, &warp10ArrayResult); err != nil {
+		logger.Debug("Array parsing error ", warp10ArrayResult)
+	} else {
+		logger.Debug("Array results parsing error ", warp10ArrayResult)
 
-	return backend.DataResponse{Frames: frames}
+		// warp10 response is always an array
+		if len(warp10ArrayResult) <= 0 {
+			logger.Warn("Array parsing error. Response parsed but it is not an array", warp10ArrayResult)
+		}
+		var arrayRes = warp10ArrayResult[0]
+
+		fields := []*data.Field{}
+
+		// Check the type of the first element to infer type
+		if len(arrayRes) > 0 {
+			switch arrayRes[0].(type) {
+			case string:
+				var stringValues []string
+				for _, v := range arrayRes {
+					if v == nil {
+						v = ""
+					}
+					stringValues = append(stringValues, v.(string))
+				}
+				field := data.NewField("array_value_string", nil, stringValues)
+				fields = append(fields, field)
+			case int64:
+				var stringValues []int64
+				for _, v := range arrayRes {
+					if v == nil {
+						v = ""
+					}
+					stringValues = append(stringValues, v.(int64))
+				}
+				field := data.NewField("array_value_int64", nil, stringValues)
+				fields = append(fields, field)
+			case float64:
+				var floatValues []float64
+				for _, v := range arrayRes {
+					if v == nil {
+						v = 0
+					}
+					floatValues = append(floatValues, v.(float64))
+				}
+				field := data.NewField("array_value_float64", nil, floatValues)
+				fields = append(fields, field)
+			default:
+				logger.Warn("Unsupported data type for column", "array_name")
+			}
+		}
+
+		logger.Debug("Sent array dataframe in response")
+
+		var frames = make(data.Frames, 1)
+		frames[0] = data.NewFrame("arrayResults", fields...)
+		return backend.DataResponse{Frames: frames}
+	}
+
+	// if response is a string or an int
+	var warp10ScalarResult []interface{}
+	if err = json.Unmarshal(body, &warp10ScalarResult); err != nil {
+		logger.Debug("Scalar parsing error", warp10ScalarResult)
+	} else {
+		logger.Debug("warp10ScalarResult", warp10ScalarResult)
+
+		// warp10 response is always an array
+		if len(warp10ScalarResult) <= 0 {
+			logger.Warn("Scalar parsing error. Response parsed but it is not an array", warp10ScalarResult)
+		}
+		var scalarRes interface{} = warp10ScalarResult[0]
+
+		fields := []*data.Field{}
+
+		switch v := scalarRes.(type) {
+		case string:
+			field := data.NewField("scalar_value_string", nil, []string{v})
+			fields = append(fields, field)
+		case int64:
+			field := data.NewField("scalar_value_int64", nil, []int64{v})
+			fields = append(fields, field)
+		case float64:
+			field := data.NewField("scalar_value_float64", nil, []float64{v})
+			fields = append(fields, field)
+		default:
+			logger.Warn("Unsupported data type for scalar value")
+		}
+
+		logger.Debug("Sent scalar dataframe in response")
+
+		var frames = make(data.Frames, 1)
+		frames[0] = data.NewFrame("scalarResult", fields...)
+		return backend.DataResponse{Frames: frames}
+	}
+
+	logger.Warn("No response type found")
+	return backend.DataResponse{}
 }
 
 // CheckHealth handles health checks sent from Grafana to the plugin.
