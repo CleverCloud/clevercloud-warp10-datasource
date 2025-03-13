@@ -1,10 +1,9 @@
-import React, {useEffect, useState} from 'react';
-import {QueryEditorProps} from '@grafana/data';
-import {DataSource} from '../datasource';
-import {WarpDataSourceOptions, WarpQuery} from '../types';
-import {Editor} from "@monaco-editor/react";
-import {debounceTime, tap, Subject} from 'rxjs';
-
+import React, { ChangeEvent, useEffect, useState } from 'react';
+import { QueryEditorProps } from '@grafana/data';
+import { DataSource } from '../datasource';
+import { WarpDataSourceOptions, WarpQuery } from '../types/types';
+import { debounceTime, tap, Subject } from 'rxjs';
+import { TextArea } from '@grafana/ui';
 
 type Props = QueryEditorProps<DataSource, WarpQuery, WarpDataSourceOptions>;
 
@@ -13,54 +12,44 @@ type Props = QueryEditorProps<DataSource, WarpQuery, WarpDataSourceOptions>;
  * @param text
  */
 function nbrLinesText(text: string | undefined) {
-  return ([...text ?? ""].filter(x => x === "\n").length + 1)
+  return [...(text ?? '')].filter((x) => x === '\n').length + 1;
 }
 
-export function QueryEditor({query, onChange, onRunQuery}: Props) {
+export function QueryEditor({ query, onChange, onRunQuery }: Props) {
+  let { expr } = query;
 
-  const {queryText} = query;
-
-  //height management variable
-  let [heightEditor, setHeightEditor] = useState(nbrLinesText(queryText) * 20)
-
-  //operations changes
-  let [subject, _a] = useState(new Subject<string | undefined>())
-  let [onChangeObservable, _b] = useState(subject.asObservable().pipe(
-    tap(value => {
-      //update height editor
-      const nbrLine = nbrLinesText(value)
-      if (nbrLine > 10) {
-        setHeightEditor(200)
-      } else {
-        setHeightEditor(nbrLine * 20)
-      }
-
-      onChange({...query, queryText: value ?? ''})
-    }),
-    debounceTime(2000),
-  ))
-
-  useEffect(() => {
-    let subscription = onChangeObservable.subscribe(() => onRunQuery())
-    return () => subscription.unsubscribe()
-  }, [onChangeObservable, onRunQuery])
-
-  const onQueryTextChange = (value: string | undefined) => {
-    subject.next(value)
+  // fix to make progressive change in Grafana
+  // Previous version of these plugin as already be deployed
+  // this support previous plugin's data structure version
+  if (!expr && expr !== '') {
+    console.warn('Deprecate request detected');
+    // @ts-ignore
+    expr = query.queryText;
   }
 
-  return (
+  //operations changes
+  let [subject, _a] = useState(new Subject<string | undefined>());
+  let [onChangeObservable, _b] = useState(
+    subject.asObservable().pipe(
+      tap((value) => {
+        onChange({ ...query, expr: value ?? '' });
+      }),
+      debounceTime(2000)
+    )
+  );
 
-    <div className="gf-form" style={{border: "solid 1px #2e3136"}}>
-      <Editor height={heightEditor} defaultLanguage="Warp10" theme="grafanaTheme" defaultValue=""
-              value={queryText} onChange={onQueryTextChange}
-              options={{
-                scrollBeyondLastLine: false,
-                minimap: {
-                  enabled: false,
-                },
-              }}
-      />
+  useEffect(() => {
+    let subscription = onChangeObservable.subscribe(() => onRunQuery());
+    return () => subscription.unsubscribe();
+  }, [onChangeObservable, onRunQuery]);
+
+  const onExprChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    subject.next(event.target.value);
+  };
+
+  return (
+    <div className="gf-form" style={{ border: 'solid 1px #2e3136' }}>
+      <TextArea rows={nbrLinesText(expr)} value={expr} onChange={onExprChange} />
     </div>
   );
 }
