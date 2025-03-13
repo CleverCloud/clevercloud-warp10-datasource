@@ -1,0 +1,305 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 1,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 4,
+      "panels": [],
+      "title": "Graph example",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "clevercloud-warp10-datasource",
+        "uid": "P62DF7D107A4865DF"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.5.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "clevercloud-warp10-datasource",
+            "uid": "P62DF7D107A4865DF"
+          },
+          "expr": "NEWGTS\n'io.warp10.grafana.test' RENAME\n{ 'func' 'sinus' } RELABEL\n'sinus' STORE\n\nNEWGTS\n'io.warp10.grafana.testmetric' RENAME\n{ 'func' 'cosinus' } RELABEL\n'cosinus' STORE\n\n$interval 20 / TOLONG 'step' STORE\n\n<% $step + %> 'stepMacro' STORE\n<% 'index' STORE $sinus $index NaN NaN NaN $index SIN  ADDVALUE DROP %> 'execMacroSinus' STORE\n<% 'index' STORE $cosinus $index NaN NaN NaN $index COS  ADDVALUE DROP %> 'execMacroCoinus' STORE\n\n$start $end $stepMacro $execMacroSinus FORSTEP\n$start $end $stepMacro $execMacroCoinus FORSTEP\n$sinus $cosinus",
+          "refId": "A"
+        }
+      ],
+      "title": "Graph Example",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "clevercloud-warp10-datasource",
+        "uid": "P62DF7D107A4865DF"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 1
+      },
+      "id": 2,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.5.0",
+      "targets": [
+        {
+          "expr": "{\n  'columns' [\n    {\n      'text' 'columnA'\n      'type' 'number'\n      'sort' true\n      'desc' true\n    }\n    {\n      'text' 'columnB'\n      'type' 'number'\n    }\n  ]\n  'rows' [\n    [ 10 20 ]\n    [ 100 200 ]\n   [ 100 200 ]\n   [ 100 200 ]\n   [ 100 200 ]\n   [ 100 200 ]\n   [ 100 200 ]\n   [ 100 200 ]\n  ]\n}",
+          "refId": "A"
+        }
+      ],
+      "title": "Table Example",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "id": 6,
+      "panels": [],
+      "title": "Define Templating variables",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "clevercloud-warp10-datasource",
+        "uid": "P62DF7D107A4865DF"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "id": 5,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.5.0",
+      "targets": [
+        {
+          "expr": "{\n  'columns' [\n    {\n      'text' 'columnA'\n      'type' 'number'\n      'sort' true\n      'desc' true\n    }\n    {\n      'text' 'columnB'\n      'type' 'number'\n    }\n  ]\n  'rows' [\n    [ '$testList' $testList ]\n    [ '$testList_list' '${testList_list}' ]\n  ]\n}",
+          "refId": "A"
+        }
+      ],
+      "title": "Table Example",
+      "type": "table"
+    }
+  ],
+  "preload": false,
+  "refresh": "",
+  "schemaVersion": 40,
+  "tags": [],
+  "templating": {
+    "list": [
+      {
+        "allowCustomValue": true,
+        "current": {
+          "text": [],
+          "value": []
+        },
+        "definition": "1 5 <% %> FOR 'a' 'b b'",
+        "includeAll": false,
+        "multi": true,
+        "name": "testList",
+        "options": [],
+        "query": "1 5 <% %> FOR 'a' 'b b'",
+        "refresh": 1,
+        "regex": "",
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "New dashboard",
+  "uid": "aef1cp7ee5reoa",
+  "version": 1,
+  "weekStart": ""
+}
