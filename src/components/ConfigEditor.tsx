@@ -161,11 +161,11 @@ export function ConfigEditor(props: Props) {
         <InlineField
           label="Access"
           labelWidth={12}
-          tooltip={'Direct = url is used directly from browser Proxy = Grafana backend will proxy the request'}
+          tooltip={'Direct = url is used directly from browser(DEPRECATED), Proxy = Grafana backend will proxy the request'}
         >
           <Select
             options={[
-              { value: 'DIRECT', label: 'direct' },
+              { value: 'DIRECT', label: 'direct (DEPRECATED)' },
               { value: 'PROXY', label: 'proxy' },
             ]}
             value={options.jsonData.access === 'DIRECT' ? 'DIRECT' : 'PROXY'}

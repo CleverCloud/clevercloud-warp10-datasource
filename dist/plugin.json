@@ -27,7 +27,7 @@
         "updated": "2025-01-21"
     },
     "dependencies": {
-        "grafanaDependency": ">=9.5.3",
+        "grafanaDependency": "<11.5 >=9.5.3",
         "plugins": []
     },
     "buildMode": "development"

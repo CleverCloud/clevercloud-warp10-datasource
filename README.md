@@ -1,134 +1,182 @@
-# Grafana data source plugin template
+# Clever Cloud Warp 10 Plugin
 
-This template is a starting point for building a Data Source Plugin for Grafana.
+## Overview
 
-## What are Grafana data source plugins?
+The **Warp 10 Plugin** for Grafana allows querying and visualizing time-series data from a Warp 10 database.
 
-Grafana supports a wide range of data sources, including Prometheus, MySQL, and even Datadog. There’s a good chance you can already visualize metrics from the systems you have set up. In some cases, though, you already have an in-house metrics solution that you’d like to add to your Grafana dashboards. Grafana Data Source Plugins enables integrating such solutions with Grafana.
+## Install the plugin
 
-## Getting started
+You will need to restart your Grafana instance after the installation.
 
-### Backend
+### Using grafana-cli
 
-1. Update [Grafana plugin SDK for Go](https://grafana.com/docs/grafana/latest/developers/plugins/backend/grafana-plugin-sdk-for-go/) dependency to the latest minor version:
+Install the plugin via Grafana CLI:
 
-   ```bash
-   go get -u github.com/grafana/grafana-plugin-sdk-go
-   go mod tidy
-   ```
+```bash
+grafana cli plugins install clevercloud-warp10-datasource
+```
 
-2. Build backend plugin binaries for Linux, Windows and Darwin:
+### Cloning the repository
 
-   ```bash
-   mage -v
-   ```
+Just clone the repository in the Grafana plugins folder
 
-3. List all available Mage targets for additional commands:
+```bash
+git clone https://github.com/abocquierCC/clevercloud-warp10-datasource.git
+```
 
-   ```bash
-   mage -l
-   ```
-### Frontend
+## Configuration
 
-1. Install dependencies
+1. Navigate to **Configuration** → **Data Sources**.
+2. Click **Add data source** and select **Warp 10**.
+3. Enter the Warp 10 endpoint (without `/api/v0/exec`).
+4. Usage of 'proxy' mode is recommended (direct mode will be deprecated)
+5. Save & Test the connection.
 
-   ```bash
-   npm install
-   ```
+## Usage
 
-2. Build plugin in development mode and run in watch mode
+- Use **WarpScript** queries in the **Query Editor** to fetch time-series data.
+- Example Query:
+  ```warpscript
+  [ $start $end 'temperature' {} FETCH ]
+  ```
+- Customize **visualizations** using Grafana panels.
 
-   ```bash
-   npm run dev
-   ```
+### Add execution variables
 
-3. Build plugin in production mode
+You can define variables at datasource level (~ organisation level) which can be available for all dashboards. you can
+put tokens, constants, macros, ... In case of a macro definition, the variable value must start with <% and end with %>.
+In the query you can prepend @ to the macro name to execute it.
 
-   ```bash
-   npm run build
-   ```
+For example, you can store a read token here:
 
-4. Run the tests (using Jest)
+![Usage of constants](/src/assets/readme/readme-const-usage.png)
 
-   ```bash
-   # Runs the tests and watches for changes, requires git init first
-   npm run test
+### Make a query
 
-   # Exits after running all the tests
-   npm run test:ci
-   ```
+On a new dashboard, in a Graph visualization, click on Query icon on the left side bar, and choose Warp10 datasource.
 
-5. Spin up a Grafana instance and run the plugin inside it (using Docker)
+A text editor will appear. You can use the global variable you defined previously.
 
-   ```bash
-   npm run server
-   ```
+#### Graph example
 
-6. Run the E2E tests (using Cypress)
+The plugin look for GTS or GTS array in your stack, all other stack entry will be ignored.
 
-   ```bash
-   # Spins up a Grafana instance first that we tests against
-   npm run server
+![Make a query for time series](/src/assets/readme/readme-request-usage.png)
 
-   # Starts the tests
-   npm run e2e
-   ```
+#### Table example
 
-7. Run the linter
+By default, the plugin build a table with the timestamp as the first column, and one column per GTS.
 
-   ```bash
-   npm run lint
+You can build custom tables instead of formating GTS array, if your result stack have only 1 element and this element
+have columns and rows property. Then you can choose Table as Table transform in Table Options section
 
-   # or
+WarpScript™ example with the following request:
 
-   npm run lint:fix
-   ```
+```
+{
+  'columns' [
+    {
+      'text' 'columnA'
+      'type' 'number'
+      'sort' true
+      'desc' true
+    }
+    {
+      'text' 'columnB'
+      'type' 'number'
+    }
+  ]
+  'rows' [
+    [ 10 20 ]
+    [ 100 200 ]
+  ]
+}
+```
 
+You got:
 
-# Distributing your plugin
+![Make a query for table](/src/assets/readme/readme-table-usage.png)
 
-When distributing a Grafana plugin either within the community or privately the plugin must be signed so the Grafana application can verify its authenticity. This can be done with the `@grafana/sign-plugin` package.
+### Define Templating variables
 
-_Note: It's not necessary to sign a plugin during development. The docker development environment that is scaffolded with `@grafana/create-plugin` caters for running the plugin without a signature._
+You can make a WarpScript query to build the choice list of your templating variables. In the dashboard settings, select
+Variables, and create a new one from a Query, with Warp10 as datasource. You can write any WarpScript in the Query field
+to build your list of choices:
 
-## Initial steps
+![Define templating variable](/src/assets/readme/readme-var-def-usage.png)
 
-Before signing a plugin please read the Grafana [plugin publishing and signing criteria](https://grafana.com/docs/grafana/latest/developers/plugins/publishing-and-signing-criteria/) documentation carefully.
+- If you let several values on the stack, each value will be added to the choice list.
+- Best practice: Let a list on the stack. Each value will be added to the choice list.
+- Best practice: Let a map on the stack. The map keys will be added to the choice list, the map values will be available
+  within the panels WarpScript query. The values will be hidden from the dashboard user. This allows to hide complex
+  values behind user-friendly labels.
 
-`@grafana/create-plugin` has added the necessary commands and workflows to make signing and distributing a plugin via the grafana plugins catalog as straightforward as possible.
+Each value is transformed into two WarpScript variables you can use in your queries:
 
-Before signing a plugin for the first time please consult the Grafana [plugin signature levels](https://grafana.com/docs/grafana/latest/developers/plugins/sign-a-plugin/#plugin-signature-levels) documentation to understand the differences between the types of signature level.
+- A string, named as you named your variable.
+- A list of strings, named as you named your variable, suffixed by _list.
 
-1. Create a [Grafana Cloud account](https://grafana.com/signup).
-2. Make sure that the first part of the plugin ID matches the slug of your Grafana Cloud account.
-   - _You can find the plugin ID in the plugin.json file inside your plugin directory. For example, if your account slug is `acmecorp`, you need to prefix the plugin ID with `acmecorp-`._
-3. Create a Grafana Cloud API key with the `PluginPublisher` role.
-4. Keep a record of this API key as it will be required for signing a plugin
+![Defining variables](/src/assets/readme/readme-var-def-result-usage.png)
 
-## Signing a plugin
+- If you do not use multiple selection, variable and variable_list will contain the currently selected value
+- If you use multiple selection:
+    - the string will contain an optimized WarpScript regular expression
+    - the list will contain each element selected
+- If you defined a custom all value and checked "All", variable and variable_list will contain your customized value.
 
-### Using Github actions release workflow
+### Query returning Labels
 
-If the plugin is using the github actions supplied with `@grafana/create-plugin` signing a plugin is included out of the box. The [release workflow](./.github/workflows/release.yml) can prepare everything to make submitting your plugin to Grafana as easy as possible. Before being able to sign the plugin however a secret needs adding to the Github repository.
+A variable can contain values for a defined Label. For example, to get all the unique values for the key hostname, you
+can specify a query like this in the templating variable Query setting.
 
-1. Please navigate to "settings > secrets > actions" within your repo to create secrets.
-2. Click "New repository secret"
-3. Name the secret "GRAFANA_API_KEY"
-4. Paste your Grafana Cloud API key in the Secret field
-5. Click "Add secret"
+```warpscript
+[ $ReadToken '~.*' { 'hostname' '~.*' } ] FIND
+<% DROP LABELS 'hostname' GET %> LMAP
+UNIQUE
+```
 
-#### Push a version tag
+You can also create nested variables. For example if you had another variable, for example $region. Then you could have
+the hosts variable only show hosts from the current selected region with a query like this:
 
-To trigger the workflow we need to push a version tag to github. This can be achieved with the following steps:
+```warpscript
+[ $ReadToken '~.*' { 'region' $region } ] FIND
+<% DROP LABELS 'hostname' GET %> LMAP
+UNIQUE
+```
 
-1. Run `npm version <major|minor|patch>`
-2. Run `git push origin main --follow-tags`
+You can fetch keys for a given Class.
 
+```warpscript
+[ $ReadToken '<class_name>' { } ] FIND
+<% DROP LABELS KEYLIST %> LMAP
+FLATTEN
+UNIQUE
+```
 
-## Learn more
+### Templating variable evaluation
 
-Below you can find source code for existing app plugins and other related documentation.
+To understand the variable resolution, this is how a query is built
 
-- [Basic data source plugin example](https://github.com/grafana/grafana-plugin-examples/tree/master/examples/datasource-basic#readme)
-- [Plugin.json documentation](https://grafana.com/docs/grafana/latest/developers/plugins/metadata/)
-- [How to sign a plugin?](https://grafana.com/docs/grafana/latest/developers/plugins/sign-a-plugin/)
+- Inject dashboard variables ($end, $interval, etc...)
+- Inject datasource execution variables (Customized by datasource)
+- Inject templating variables following the configuration order (a templating variable can call the previous templating
+  variables in its resolution)
+- Inject user query (can use all previous variables)
+
+/!\ all the templating values are cast into strings by Grafana engine.
+
+## Documentation
+
+The complete documentation about Warp10 is available at https://www.warp10.io
+
+## Contributing
+
+If you're interested in contributing to the plugin project:
+
+- [Contribute](https://github.com/CleverCloud/clevercloud-warp10-datasource/blob/main/CONTRIBUTING.md)
+- [Report Bugs](https://github.com/CleverCloud/clevercloud-warp10-datasource/issues)
+
+## License
+
+This project is on the Apache-2.0 license,
+see [LICENSE](https://github.com/CleverCloud/clevercloud-warp10-datasource/blob/main/LICENSE)
