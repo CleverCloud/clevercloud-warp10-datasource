@@ -437,7 +437,15 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
               if (field.values) {
                 const elt = field.values;
 
-                if (isArray(elt)) {
+                if (field.name.includes('array_value')) {
+                  // simple array response, defined in backend
+                  // (we cannot differentiate variable query from panels' requests)
+                  if (elt.buffer !== undefined) {
+                    return elt.buffer.map((v: any) => ({ text: v }));
+                  } else {
+                    return elt.map((v: any) => ({ text: v }));
+                  }
+                } else if (isArray(elt)) {
                   return elt.map((v) => ({
                     text: v.toString(),
                     value: v.toString(),
