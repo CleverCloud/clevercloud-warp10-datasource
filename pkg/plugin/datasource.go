@@ -119,75 +119,112 @@ func (d *Datasource) query(_ context.Context, pCtx backend.PluginContext, query 
 		- Nested List: [  [ {...}, {...}, ... ], {...}, ... ]
 	*/
 
-	//Recup GTSList of the response body
-	var gtsList b.GTSList
-
 	// If the response is a table...
+	backendTableResult, err := parseTableResult(body)
+	if err == nil {
+		return backendTableResult
+	}
+
+	// If the result is an array made of GTS or GTSList
+	gtsListResult, err := parseGTSListResult(body)
+	if err == nil {
+		return gtsListResult
+	}
+
+	// if response is an array
+	backendArrayResult, err := parseArrayResult(body)
+	if err == nil {
+		return backendArrayResult
+	}
+
+	// all others warp10 response
+	backendScalarResult, err := parseScalarResult(body)
+	if err == nil {
+		return backendScalarResult
+	}
+
+	return backend.DataResponse{Error: fmt.Errorf("no response type found")}
+}
+
+// CheckHealth handles health checks sent from Grafana to the plugin.
+// The main use case for these health checks is the test button on the
+// datasource configuration page which allows users to verify that
+// a datasource is working as expected.
+func (d *Datasource) CheckHealth(_ context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
+	var status = backend.HealthStatusOk
+	var message = "Data source is working !"
+
+	_, err := d.client.Exec("1 2 +")
+
+	if err != nil {
+		status = backend.HealthStatusError
+		message = err.Error()
+	}
+
+	return &backend.CheckHealthResult{
+		Status:  status,
+		Message: message,
+	}, nil
+}
+
+// time from warp10 in microseconds
+// grafana needs milliseconds
+func timeFromFloat64(t float64) time.Time {
+	return time.UnixMicro(int64(t))
+}
+
+func parseTableResult(result []byte) (backend.DataResponse, error) {
 	var tableResults []TableResult
-	if err = json.Unmarshal(body, &tableResults); err != nil {
-		logger.Info("Table parsing error ", tableResults)
+	if errRes := json.Unmarshal(result, &tableResults); errRes != nil {
+		errRes = fmt.Errorf("Table parsing error %v", tableResults)
+		return backend.DataResponse{}, errRes
 	} else {
 		if len(tableResults) > 0 && tableResults[0].Columns != nil && tableResults[0].Rows != nil {
 			var frames = make(data.Frames, 1)
 
-			fields := []*data.Field{}
+			var fields []*data.Field
 			for i, col := range tableResults[0].Columns {
 
 				var r []interface{}
 				// Collect data for the current column
 				for _, row := range tableResults[0].Rows {
-					if i < len(row) {
+					if i >= len(row) {
+						r = append(r, nil)
+					} else {
 						r = append(r, row[i])
 					}
 				}
 
-				// Check the type of the first element to infer type
-				if len(r) > 0 {
-					switch r[0].(type) {
-					case string:
-						var stringValues []string
-						for _, v := range r {
-							if v == nil {
-								v = ""
-							}
-							stringValues = append(stringValues, v.(string))
-						}
-						field := data.NewField(col.Text, nil, stringValues)
-						fields = append(fields, field)
-					case float64:
-						var floatValues []float64
-						for _, v := range r {
-							if v == nil {
-								v = 0
-							}
-							floatValues = append(floatValues, v.(float64))
-						}
-						field := data.NewField(col.Text, nil, floatValues)
-						fields = append(fields, field)
-					default:
-						logger.Warn("Unsupported data type for column", col.Text)
-						continue
-					}
+				if field, err := convertListToField(r, col.Text); err != nil {
+					return backend.DataResponse{}, fmt.Errorf("table parsing error: %v", err)
+				} else {
+					fields = append(fields, field)
 				}
 			}
+
 			frames[0] = data.NewFrame("tableResults", fields...)
-			return backend.DataResponse{Frames: frames}
+			return backend.DataResponse{Frames: frames}, nil
 		}
 	}
 
-	// If the result is an array made of GTS or GTSList
-	gtsList = b.GTSList{}
-	result := gjson.GetBytes(body, "@flatten")
+	return backend.DataResponse{}, fmt.Errorf("Table parsing error")
+}
+
+func parseGTSListResult(result []byte) (backend.DataResponse, error) {
+	logger := log.New()
+
+	var gtsList = b.GTSList{}
+	flattenResult := gjson.GetBytes(result, "@flatten")
 	var raw []byte
-	if result.Index > 0 {
-		raw = body[result.Index : result.Index+len(result.Raw)]
+	if flattenResult.Index > 0 {
+		raw = result[flattenResult.Index : flattenResult.Index+len(flattenResult.Raw)]
 	} else {
-		raw = []byte(result.Raw)
+		raw = []byte(flattenResult.Raw)
 	}
 
-	if err = json.Unmarshal([]byte(raw), &gtsList); err != nil {
-		var errStr = fmt.Sprintf("json unmarshal: %v", err.Error())
-		logger.Error("Flatten error", errStr)
+	if err := json.Unmarshal([]byte(raw), &gtsList); err != nil {
+		var errStr = fmt.Sprintf("json unmarshal: %v, gtslist %v", err.Error(), gtsList)
+		logger.Debug("Flatten error", errStr)
 	} else {
 		//Frames creation
 		var frames = make(data.Frames, len(gtsList))
@@ -260,83 +297,58 @@ func (d *Datasource) query(_ context.Context, pCtx backend.PluginContext, query 
 
 		wg.Wait()
 
-		return backend.DataResponse{Frames: frames}
+		return backend.DataResponse{Frames: frames}, nil
 	}
 
-	// if response is an array
+	return backend.DataResponse{}, fmt.Errorf("GTSList parsing error")
+}
+
+func parseArrayResult(result []byte) (backend.DataResponse, error) {
+	logger := log.New()
+
 	var warp10ArrayResult [][]interface{}
-	if err = json.Unmarshal(body, &warp10ArrayResult); err != nil {
+	if err := json.Unmarshal(result, &warp10ArrayResult); err != nil {
 		logger.Debug("Array parsing error ", warp10ArrayResult)
 	} else {
 		logger.Debug("Array results parsing error ", warp10ArrayResult)
 
 		// warp10 response is always an array
-		if len(warp10ArrayResult) <= 0 {
-			logger.Warn("Array parsing error. Response parsed but it is not an array", warp10ArrayResult)
+		if len(warp10ArrayResult) == 0 {
+			return backend.DataResponse{}, fmt.Errorf("array parsing error. Response unmarshal but warp10 array is empty")
 		}
 		var arrayRes = warp10ArrayResult[0]
 
-		fields := []*data.Field{}
-
-		// Check the type of the first element to infer type
-		if len(arrayRes) > 0 {
-			switch arrayRes[0].(type) {
-			case string:
-				var stringValues []string
-				for _, v := range arrayRes {
-					if v == nil {
-						v = ""
-					}
-					stringValues = append(stringValues, v.(string))
-				}
-				field := data.NewField("array_value_string", nil, stringValues)
-				fields = append(fields, field)
-			case int64:
-				var stringValues []int64
-				for _, v := range arrayRes {
-					if v == nil {
-						v = ""
-					}
-					stringValues = append(stringValues, v.(int64))
-				}
-				field := data.NewField("array_value_int64", nil, stringValues)
-				fields = append(fields, field)
-			case float64:
-				var floatValues []float64
-				for _, v := range arrayRes {
-					if v == nil {
-						v = 0
-					}
-					floatValues = append(floatValues, v.(float64))
-				}
-				field := data.NewField("array_value_float64", nil, floatValues)
-				fields = append(fields, field)
-			default:
-				logger.Warn("Unsupported data type for column", "array_name")
-			}
+		var fields []*data.Field
+		if field, err := convertListToField(arrayRes, "array_value"); err != nil {
+			return backend.DataResponse{}, fmt.Errorf("array parsing error: %v", err)
+		} else {
+			fields = append(fields, field)
 		}
-
-		logger.Debug("Sent array dataframe in response")
 
 		var frames = make(data.Frames, 1)
 		frames[0] = data.NewFrame("arrayResults", fields...)
-		return backend.DataResponse{Frames: frames}
+		return backend.DataResponse{Frames: frames}, nil
 	}
 
-	// if response is a string or an int
+	return backend.DataResponse{}, fmt.Errorf("array parsing error")
+}
+
+func parseScalarResult(result []byte) (backend.DataResponse, error) {
+	logger := log.New()
+
 	var warp10ScalarResult []interface{}
-	if err = json.Unmarshal(body, &warp10ScalarResult); err != nil {
+	if err := json.Unmarshal(result, &warp10ScalarResult); err != nil {
 		logger.Debug("Scalar parsing error", warp10ScalarResult)
 	} else {
 		logger.Debug("warp10ScalarResult", warp10ScalarResult)
 
 		// warp10 response is always an array
-		if len(warp10ScalarResult) <= 0 {
-			logger.Warn("Scalar parsing error. Response parsed but it is not an array", warp10ScalarResult)
+		if len(warp10ScalarResult) == 0 {
+			return backend.DataResponse{}, fmt.Errorf("scalar parsing error. Response unmarshal but warp10 array is empty")
 		}
-		var scalarRes interface{} = warp10ScalarResult[0]
+		var scalarRes = warp10ScalarResult[0]
 
-		fields := []*data.Field{}
+		var fields []*data.Field
 
 		switch v := scalarRes.(type) {
 		case string:
@@ -348,44 +360,91 @@ func (d *Datasource) query(_ context.Context, pCtx backend.PluginContext, query 
 		case float64:
 			field := data.NewField("scalar_value_float64", nil, []float64{v})
 			fields = append(fields, field)
+		case bool:
+			field := data.NewField("scalar_value_bool", nil, []bool{v})
+			fields = append(fields, field)
 		default:
-			logger.Warn("Unsupported data type for scalar value")
+			logger.Debug("No response type found: warp10 result:", warp10ScalarResult)
+			return backend.DataResponse{Error: fmt.Errorf("no response type found")}, nil
 		}
 
 		logger.Debug("Sent scalar dataframe in response")
 
 		var frames = make(data.Frames, 1)
 		frames[0] = data.NewFrame("scalarResult", fields...)
-		return backend.DataResponse{Frames: frames}
+		return backend.DataResponse{Frames: frames}, nil
 	}
 
-	logger.Warn("No response type found")
-	return backend.DataResponse{}
+	return backend.DataResponse{}, fmt.Errorf("Scalar parsing error")
 }
 
-// CheckHealth handles health checks sent from Grafana to the plugin.
-// The main use case for these health checks is the test button on the
-// datasource configuration page which allows users to verify that
-// a datasource is working as expected.
-func (d *Datasource) CheckHealth(_ context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
-	var status = backend.HealthStatusOk
-	var message = "Data source is working !"
+func convertListToField(values []interface{}, className string) (*data.Field, error) {
+	logger := log.New()
+	var field *data.Field
 
-	_, err := d.client.Exec("1 2 +")
-
-	if err != nil {
-		status = backend.HealthStatusError
-		message = err.Error()
+	// If empty list, return empty field
+	if len(values) == 0 {
+		return data.NewField(className, nil, []*string{}), nil
 	}
 
-	return &backend.CheckHealthResult{
-		Status:  status,
-		Message: message,
-	}, nil
-}
+	// Infer type from first element
+	var firstNonNullElement interface{} = nil
+	for _, v := range values {
+		if v != nil {
+			firstNonNullElement = v
+			break
+		}
+	}
 
-func timeFromFloat64(t float64) time.Time {
-	secs := int64(t / 1e6)
-	nsecs := int64((t - float64(secs)) / 1e3)
-	return time.Unix(secs, nsecs)
+	if firstNonNullElement == nil {
+		var stringValues []*string
+		for range values {
+			stringValues = append(stringValues, nil)
+		}
+		return data.NewField(className, nil, stringValues), nil
+	}
+
+	switch firstNonNullElement.(type) {
+	case string:
+		var stringValues []*string
+		for _, v := range values {
+			var s string
+			if v != nil {
+				s = v.(string)
+				stringValues = append(stringValues, &s)
+			} else {
+				stringValues = append(stringValues, nil)
+			}
+		}
+		field = data.NewField(className, nil, stringValues)
+	case float64:
+		var floatValues []*float64
+		for _, v := range values {
+			var f float64
+			if v != nil {
+				f = v.(float64)
+				floatValues = append(floatValues, &f)
+			} else {
+				floatValues = append(floatValues, nil)
+			}
+		}
+		field = data.NewField(className, nil, floatValues)
+	case bool:
+		var boolValues []*bool
+		for _, v := range values {
+			var bVal bool
+			if v != nil {
+				bVal = v.(bool)
+				boolValues = append(boolValues, &bVal)
+			} else {
+				boolValues = append(boolValues, nil)
+			}
+		}
+		field = data.NewField(className, nil, boolValues)
+	default:
+		logger.Debug("Unsupported data type for", className)
+		return nil, fmt.Errorf("unsupported data type for %v", className)
+	}
+
+	return field, nil
 }
