@@ -282,14 +282,25 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   private computeGrafanaContext(): string {
     let wsHeader = '';
 
+    const applyVarToHeader = (myVar: any) => {
+      let value = '';
+      if (typeof myVar.value === 'string') {
+        value = myVar.value.replace(/'/g, '"');
+      }
+      if (typeof myVar.value === 'string' && !myVar.value.startsWith('<%') && !myVar.value.endsWith('%>')) {
+        value = `'${myVar.value}'`;
+      }
+      return `${value || 'NULL'} '${myVar.name}' STORE\n`;
+    };
+
     //Add constants
     this.const.forEach((myVar) => {
-      wsHeader += `'${myVar.value}' '${myVar.name}' STORE\n`;
+      wsHeader += applyVarToHeader(myVar);
     });
 
     //Add macros
     this.macro.forEach((myMacro) => {
-      wsHeader += `${myMacro.value} '${myMacro.name}' STORE\n`;
+      wsHeader += applyVarToHeader(myMacro);
     });
 
     wsHeader += 'LINEON\n';
