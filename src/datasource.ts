@@ -29,7 +29,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   //Information database
   private path: string;
 
-  private access: 'DIRECT' | 'PROXY';
+  private access: 'direct' | 'proxy';
 
   private const: ConstProp[];
 
@@ -46,7 +46,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     super(instanceSettings);
     this.path = instanceSettings.jsonData.path ?? '';
 
-    this.access = instanceSettings.jsonData.access ?? 'PROXY';
+    this.access = instanceSettings.access ?? 'proxy';
 
     this.const = instanceSettings.jsonData.const ?? [];
 
@@ -76,7 +76,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * @return {Promise<any>} Response
    */
   async testDatasource(): Promise<any> {
-    return this.access === 'DIRECT' ? this.checkHealth() : super.callHealthCheck();
+    return this.access === 'direct' ? this.checkHealth() : super.callHealthCheck();
   }
 
   async checkHealth(): Promise<any> {
@@ -124,7 +124,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     this.request = request;
 
     // apply headers for proxy mode
-    if (this.access === 'PROXY') {
+    if (this.access === 'proxy') {
       const query: WarpQuery = {
         expr: request.targets[0].expr,
         refId: request.targets[0].refId,
@@ -132,7 +132,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       request.targets[0] = this.applyTemplateVariables(query, request.scopedVars);
     }
 
-    return this.access === 'DIRECT' ? this.queryDirect(request) : super.query(request);
+    return this.access === 'direct' ? this.queryDirect(request) : super.query(request);
   }
 
   queryDirect(request: DataQueryRequest<WarpQuery>): Observable<DataQueryResponse> {
@@ -417,7 +417,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       expr: this.addDashboardVariables() + this.computeGrafanaContext() + query,
     };
 
-    if (this.access === 'PROXY') {
+    if (this.access === 'proxy') {
       const query = this.query({
         targets: [warpQuery],
         scopedVars: {},

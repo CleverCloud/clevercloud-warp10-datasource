@@ -27,13 +27,13 @@ export function ConfigEditor(props: Props) {
 
   // Modification select access
   const onAccessChange = (value: SelectableValue<string>, _actionMeta: ActionMeta) => {
-    const valueAccess: 'DIRECT' | 'PROXY' = value.value === 'DIRECT' ? 'DIRECT' : 'PROXY';
+    const valueAccess: 'direct' | 'proxy' = value.value === 'direct' ? 'direct' : 'proxy';
 
-    const jsonData = {
-      ...options.jsonData,
+    const updatedOptions = {
+      ...options,
       access: valueAccess,
     };
-    onOptionsChange({ ...options, jsonData });
+    onOptionsChange(updatedOptions);
   };
 
   //Modification input name of the new constant
@@ -165,10 +165,10 @@ export function ConfigEditor(props: Props) {
         >
           <Select
             options={[
-              { value: 'DIRECT', label: 'direct (DEPRECATED)' },
-              { value: 'PROXY', label: 'proxy' },
+              { value: 'direct', label: 'direct (DEPRECATED)' },
+              { value: 'proxy', label: 'proxy' },
             ]}
-            value={options.jsonData.access === 'DIRECT' ? 'DIRECT' : 'PROXY'}
+            value={options.access === 'direct' ? 'direct' : 'proxy'}
             onChange={onAccessChange}
             width={60}
             id={'select'}

@@ -15,7 +15,6 @@ export interface ConstProp {
  */
 export interface WarpDataSourceOptions extends DataSourceJsonData {
   path?: string;
-  access?: 'DIRECT' | 'PROXY';
   const?: ConstProp[];
   macro?: ConstProp[];
 }

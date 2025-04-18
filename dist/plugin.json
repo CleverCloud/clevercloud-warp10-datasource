@@ -22,8 +22,17 @@
             "large": "assets/warp10-h.png"
         },
         "links": [],
-        "screenshots": [],
-        "version": "0.1.41",
+        "screenshots": [
+            {
+                "name": "Dashboard",
+                "path": "img/screenshots/dashboard_1.png"
+            },
+            {
+                "name": "Dashboard 2",
+                "path": "img/screenshots/dashboard_2.png"
+            }
+        ],
+        "version": "0.1.42",
         "updated": "2025-01-21"
     },
     "dependencies": {
