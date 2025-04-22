@@ -143,7 +143,7 @@ func (d *Datasource) query(_ context.Context, pCtx backend.PluginContext, query 
 		return backendScalarResult
 	}
 
-	return backend.DataResponse{Error: fmt.Errorf("no response type found")}
+	return backend.DataResponse{Error: fmt.Errorf("no supported response type found")}
 }
 
 // CheckHealth handles health checks sent from Grafana to the plugin.
@@ -176,11 +176,12 @@ func timeFromFloat64(t float64) time.Time {
 func parseTableResult(result []byte) (backend.DataResponse, error) {
 	var tableResults []TableResult
 	if errRes := json.Unmarshal(result, &tableResults); errRes != nil {
-		errRes = fmt.Errorf("Table parsing error %v", tableResults)
-		return backend.DataResponse{}, errRes
-	} else {
-		if len(tableResults) > 0 && tableResults[0].Columns != nil && tableResults[0].Rows != nil {
-			var frames = make(data.Frames, 1)
+		errMsg := fmt.Errorf("table parsing error")
+		return backend.DataResponse{}, errMsg
+	}
+
+	if len(tableResults) > 0 && tableResults[0].Columns != nil && tableResults[0].Rows != nil {
+		var frames = make(data.Frames, 1)
 
 			var fields []*data.Field
 			for i, col := range tableResults[0].Columns {
