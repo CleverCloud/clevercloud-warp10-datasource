@@ -183,29 +183,28 @@ func parseTableResult(result []byte) (backend.DataResponse, error) {
 	if len(tableResults) > 0 && tableResults[0].Columns != nil && tableResults[0].Rows != nil {
 		var frames = make(data.Frames, 1)
 
-			var fields []*data.Field
-			for i, col := range tableResults[0].Columns {
+		var fields []*data.Field
+		for i, col := range tableResults[0].Columns {
 
-				var r []interface{}
-				// Collect data for the current column
-				for _, row := range tableResults[0].Rows {
-					if i >= len(row) {
-						r = append(r, nil)
-					} else {
-						r = append(r, row[i])
-					}
-				}
-
-				if field, err := convertListToField(r, col.Text); err != nil {
-					return backend.DataResponse{}, fmt.Errorf("table parsing error: %v", err)
+			var r []interface{}
+			// Collect data for the current column
+			for _, row := range tableResults[0].Rows {
+				if i >= len(row) {
+					r = append(r, nil)
 				} else {
-					fields = append(fields, field)
+					r = append(r, row[i])
 				}
 			}
 
-			frames[0] = data.NewFrame("tableResults", fields...)
-			return backend.DataResponse{Frames: frames}, nil
+			if field, err := convertListToField(r, col.Text); err != nil {
+				return backend.DataResponse{}, fmt.Errorf("table parsing error: %v", err)
+			} else {
+				fields = append(fields, field)
+			}
 		}
+
+		frames[0] = data.NewFrame("tableResults", fields...)
+		return backend.DataResponse{Frames: frames}, nil
 	}
 
 	return backend.DataResponse{}, fmt.Errorf("Table parsing error")
