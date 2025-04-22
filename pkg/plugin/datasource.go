@@ -408,9 +408,11 @@ func convertListToField(values []interface{}, className string) (*data.Field, er
 	case string:
 		var stringValues []*string
 		for _, v := range values {
-			var s string
 			if v != nil {
-				s = v.(string)
+				s, ok := v.(string)
+				if !ok {
+					return nil, fmt.Errorf("unable to cast value to string")
+				}
 				stringValues = append(stringValues, &s)
 			} else {
 				stringValues = append(stringValues, nil)
@@ -420,9 +422,11 @@ func convertListToField(values []interface{}, className string) (*data.Field, er
 	case float64:
 		var floatValues []*float64
 		for _, v := range values {
-			var f float64
 			if v != nil {
-				f = v.(float64)
+				f, ok := v.(float64)
+				if !ok {
+					return nil, fmt.Errorf("unable to cast value to float64")
+				}
 				floatValues = append(floatValues, &f)
 			} else {
 				floatValues = append(floatValues, nil)
@@ -432,9 +436,11 @@ func convertListToField(values []interface{}, className string) (*data.Field, er
 	case bool:
 		var boolValues []*bool
 		for _, v := range values {
-			var bVal bool
 			if v != nil {
-				bVal = v.(bool)
+				bVal, ok := v.(bool)
+				if !ok {
+					return nil, fmt.Errorf("unable to cast value to bool")
+				}
 				boolValues = append(boolValues, &bVal)
 			} else {
 				boolValues = append(boolValues, nil)
