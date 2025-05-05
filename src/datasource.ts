@@ -29,7 +29,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   //Information database
   private path: string;
 
-  private access: 'DIRECT' | 'PROXY';
+  private access: 'direct' | 'proxy';
 
   private const: ConstProp[];
 
@@ -46,7 +46,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     super(instanceSettings);
     this.path = instanceSettings.jsonData.path ?? '';
 
-    this.access = instanceSettings.jsonData.access ?? 'PROXY';
+    this.access = instanceSettings.access ?? 'proxy';
 
     this.const = instanceSettings.jsonData.const ?? [];
 
@@ -76,7 +76,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * @return {Promise<any>} Response
    */
   async testDatasource(): Promise<any> {
-    return this.access === 'DIRECT' ? this.checkHealth() : super.callHealthCheck();
+    return this.access === 'direct' ? this.checkHealth() : super.callHealthCheck();
   }
 
   async checkHealth(): Promise<any> {
@@ -124,7 +124,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     this.request = request;
 
     // apply headers for proxy mode
-    if (this.access === 'PROXY') {
+    if (this.access === 'proxy') {
       const query: WarpQuery = {
         expr: request.targets[0].expr,
         refId: request.targets[0].refId,
@@ -132,7 +132,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       request.targets[0] = this.applyTemplateVariables(query, request.scopedVars);
     }
 
-    return this.access === 'DIRECT' ? this.queryDirect(request) : super.query(request);
+    return this.access === 'direct' ? this.queryDirect(request) : super.query(request);
   }
 
   queryDirect(request: DataQueryRequest<WarpQuery>): Observable<DataQueryResponse> {
@@ -282,14 +282,25 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   private computeGrafanaContext(): string {
     let wsHeader = '';
 
+    const applyVarToHeader = (myVar: any) => {
+      let value = '';
+      if (typeof myVar.value === 'string') {
+        value = myVar.value.replace(/'/g, '"');
+      }
+      if (typeof myVar.value === 'string' && !myVar.value.startsWith('<%') && !myVar.value.endsWith('%>')) {
+        value = `'${myVar.value}'`;
+      }
+      return `${value || 'NULL'} '${myVar.name}' STORE\n`;
+    };
+
     //Add constants
     this.const.forEach((myVar) => {
-      wsHeader += `'${myVar.value}' '${myVar.name}' STORE\n`;
+      wsHeader += applyVarToHeader(myVar);
     });
 
     //Add macros
     this.macro.forEach((myMacro) => {
-      wsHeader += `${myMacro.value} '${myMacro.name}' STORE\n`;
+      wsHeader += applyVarToHeader(myMacro);
     });
 
     wsHeader += 'LINEON\n';
@@ -406,7 +417,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       expr: this.addDashboardVariables() + this.computeGrafanaContext() + query,
     };
 
-    if (this.access === 'PROXY') {
+    if (this.access === 'proxy') {
       const query = this.query({
         targets: [warpQuery],
         scopedVars: {},
@@ -426,7 +437,15 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
               if (field.values) {
                 const elt = field.values;
 
-                if (isArray(elt)) {
+                if (field.name.includes('array_value')) {
+                  // simple array response, defined in backend
+                  // (we cannot differentiate variable query from panels' requests)
+                  if (elt.buffer !== undefined) {
+                    return elt.buffer.map((v: any) => ({ text: v }));
+                  } else {
+                    return elt.map((v: any) => ({ text: v }));
+                  }
+                } else if (isArray(elt)) {
                   return elt.map((v) => ({
                     text: v.toString(),
                     value: v.toString(),
