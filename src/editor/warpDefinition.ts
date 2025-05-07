@@ -1,3 +1,4 @@
+import { languages } from 'monaco-editor';
 
 export const keywords = [
   '!',
@@ -1258,3 +1259,112 @@ export const controls = [
   'UNTIL',
   'WHILE',
 ];
+
+export const languageDef: languages.IMonarchLanguage = {
+  keywords: keywords,
+  constants: constants,
+  functions: functions,
+  control: controls,
+  operators: [
+    '!',
+    '!=',
+    '%',
+    '&',
+    '&&',
+    '*',
+    '**',
+    '+',
+    '+!',
+    '-',
+    '/',
+    '<',
+    '<<',
+    '<=',
+    '==',
+    '>',
+    '>=',
+    '>>',
+    '>>>',
+    'AND',
+    'NOT',
+    'OR',
+    '^',
+    '|',
+    '||',
+    '~',
+    '~=',
+  ],
+  escapes: '\\\\(?:[abfnrtv\\"\']|x[0-9A-Fa-f]{1,4}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})',
+  tokenizer: {
+    root: [
+      ['\\@[A-Za-z0-9._\\/]+', 'variable'],
+      ['\\$[A-Za-z0-9._\\/]+', 'variable'],
+      ['true|false', 'number'],
+      [
+        '[A-Za-z_][.\\w$]*',
+        {
+          cases: {
+            '@constants': 'regexp',
+            '@keywords': 'keyword',
+            '@functions': 'type',
+            '@control': 'metatag',
+            '@default': 'identifier',
+          },
+        },
+      ],
+      ['[{}()[\\]]', '@bracket'],
+      ['\\d*\\.\\d+([eE][-+]?\\d+)?[fFdD]?', 'number.float'],
+      ['0[xX][0-9a-fA-F_]*[0-9a-fA-F][Ll]?', 'number.hex'],
+      ['0[0-7_]*[0-7][Ll]?', 'number.octal'],
+      ['0[bB][0-1_]*[0-1][Ll]?', 'number.binary'],
+      ['\\d+[lL]?', 'number'],
+      {
+        include: '@whitespace',
+      },
+      ['"([^"\\\\]|\\\\.)*$', 'string.invalid'],
+      ['"', 'string', '@string'],
+      ["'([^'\\\\]|\\\\.)*$", 'string.invalid'],
+      ["'", 'string', '@string2'],
+      ["<'", 'string', '@string3'],
+    ],
+    whitespace: [
+      ['[ \\t\\r\\n]+', 'white'],
+      ['\\/\\*', 'comment', '@comment'],
+      ['\\/\\/.*$', 'comment'],
+    ],
+    comment: [
+      ['[^\\/*]+', 'comment'],
+      ['\\/\\*', 'comment.invalid'],
+      ['\\*/', 'comment', '@pop'],
+      ['[\\/*]', 'comment'],
+    ],
+    string: [
+      ['[^\\"]+', 'string'],
+      ['@escapes', 'string.escape'],
+      ['\\.', 'string.escape.invalid'],
+      ['"', 'string', '@pop'],
+    ],
+    string2: [
+      ["[^\\']+", 'string'],
+      ['@escapes', 'string.escape'],
+      ['\\.', 'string.escape.invalid'],
+      ["'", 'string', '@pop'],
+    ],
+    string3: [
+      ["[^\\(<')]+", 'string'],
+      ["'>", 'string', '@pop'],
+    ],
+  },
+};
+
+// This config defines the editor's behavior.
+export const configuration: languages.LanguageConfiguration = {
+  brackets: [
+    ['(', ')'],
+    ['{', '}'],
+    ['[', ']'],
+    ["'", "'"],
+    ['"', '"'],
+    ['<%', '%>'],
+  ],
+};
