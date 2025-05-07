@@ -1,19 +1,15 @@
-import React, { ChangeEvent, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { QueryEditorProps } from '@grafana/data';
 import { DataSource } from '../datasource';
 import { WarpDataSourceOptions, WarpQuery } from '../types/types';
 import { debounceTime, tap, Subject } from 'rxjs';
-import { TextArea } from '@grafana/ui';
+import { Editor } from '@monaco-editor/react';
+import { setupMonaco } from '../editor/languageConfig';
+import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 
 type Props = QueryEditorProps<DataSource, WarpQuery, WarpDataSourceOptions>;
 
-/**
- * return number of lines of text
- * @param text
- */
-function nbrLinesText(text: string | undefined) {
-  return [...(text ?? '')].filter((x) => x === '\n').length + 1;
-}
+setupMonaco(monaco);
 
 export function QueryEditor({ query, onChange, onRunQuery }: Props) {
   let { expr } = query;
@@ -28,10 +24,12 @@ export function QueryEditor({ query, onChange, onRunQuery }: Props) {
   }
 
   //operations changes
+  const [heightEditor, setHeightEditor] = useState(200);
   let [subject, _a] = useState(new Subject<string | undefined>());
   let [onChangeObservable, _b] = useState(
     subject.asObservable().pipe(
       tap((value) => {
+        setHeightEditor((value ?? '').split('\n').length > 10 ? 200 : (value ?? '').split('\n').length * 20);
         onChange({ ...query, expr: value ?? '' });
       }),
       debounceTime(2000)
@@ -43,13 +41,23 @@ export function QueryEditor({ query, onChange, onRunQuery }: Props) {
     return () => subscription.unsubscribe();
   }, [onChangeObservable, onRunQuery]);
 
-  const onExprChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-    subject.next(event.target.value);
+  const onExprChange = (value: string | undefined) => {
+    subject.next(value);
   };
 
   return (
     <div className="gf-form" style={{ border: 'solid 1px #2e3136' }}>
-      <TextArea rows={nbrLinesText(expr)} value={expr} onChange={onExprChange} />
+      <Editor
+        height={heightEditor}
+        defaultLanguage="Warp10"
+        theme="vs-dark"
+        defaultValue=""
+        value={expr}
+        onChange={onExprChange}
+        options={{
+          minimap: { enabled: false },
+        }}
+      />
     </div>
   );
 }
