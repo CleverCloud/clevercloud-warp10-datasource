@@ -12,7 +12,8 @@
     "lint:fix": "npm run lint -- --fix && prettier --write --list-different .",
     "e2e": "playwright test",
     "server": "docker compose up --build",
-    "sign": "npx --yes @grafana/sign-plugin@latest"
+    "sign": "npx --yes @grafana/sign-plugin@latest",
+    "package": "npm ci && npm run build && mage"
   },
   "author": "Clever cloud",
   "license": "Apache-2.0",
@@ -28,6 +29,7 @@
     "@testing-library/jest-dom": "6.1.4",
     "@testing-library/react": "14.0.0",
     "@types/jest": "^29.5.0",
+    "@types/lodash": "^4.14.194",
     "@types/node": "^20.8.7",
     "@types/testing-library__jest-dom": "5.14.8",
     "@typescript-eslint/eslint-plugin": "^6.18.0",
@@ -36,10 +38,10 @@
     "css-loader": "^6.7.3",
     "eslint": "^8.0.0",
     "eslint-config-prettier": "^8.8.0",
+    "eslint-plugin-deprecation": "^2.0.0",
     "eslint-plugin-jsdoc": "^46.8.0",
     "eslint-plugin-react": "^7.33.0",
     "eslint-plugin-react-hooks": "^4.6.0",
-    "eslint-plugin-deprecation": "^2.0.0",
     "eslint-webpack-plugin": "^4.0.1",
     "fork-ts-checker-webpack-plugin": "^8.0.0",
     "glob": "^10.2.7",
@@ -61,8 +63,7 @@
     "webpack-cli": "^5.1.4",
     "webpack-livereload-plugin": "^3.0.2",
     "webpack-subresource-integrity": "^5.1.0",
-    "webpack-virtual-modules": "^0.6.2",
-    "@types/lodash": "^4.14.194"
+    "webpack-virtual-modules": "^0.6.2"
   },
   "engines": {
     "node": ">=22"
@@ -71,8 +72,8 @@
     "@emotion/css": "11.10.6",
     "@grafana/data": "^11.3.2",
     "@grafana/runtime": "^11.3.2",
-    "@grafana/ui": "^11.3.2",
     "@grafana/schema": "^11.3.2",
+    "@grafana/ui": "^11.3.2",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "tslib": "2.5.3",
