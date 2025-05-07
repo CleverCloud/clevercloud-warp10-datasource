@@ -74,6 +74,7 @@
     "@grafana/runtime": "^11.3.2",
     "@grafana/schema": "^11.3.2",
     "@grafana/ui": "^11.3.2",
+    "@monaco-editor/react": "^4.7.0",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "tslib": "2.5.3",
