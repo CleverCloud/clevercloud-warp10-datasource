@@ -287,7 +287,7 @@ func parseGTSListResult(result []byte) (backend.DataResponse, error) {
 
 				// add the field to the response.
 				mu.Lock()
-				frames[idx] = data.NewFrame(gts.ClassName,
+				frames[idx] = data.NewFrame("",
 					data.NewField("time", nil, vTimes),
 					fieldValue,
 				)
