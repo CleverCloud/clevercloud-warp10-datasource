@@ -134,8 +134,8 @@ func TestGTSListQuery(t *testing.T) {
 		t.Errorf("Failed to execute query: %v", err)
 	}
 
-	// the value .results.A.frames[0].refId = "A" was removed from shoul be value, Grafana may add it after making a request to proxy
-	responseShouldBe := `{"results":{"A":{"status":200,"frames":[{"schema":{"name":"testClass","fields":[{"name":"time","type":"time","typeInfo":{"frame":"time.Time"}},{"name":"testClass","type":"number","typeInfo":{"frame":"float64"}}]},"data":{"values":[[1619784000000,1619784001000],[42.5,43.2]]}}]}}}`
+	// the value .results.A.frames[0].refId = "A" was removed from responseShouldBe value, Grafana may add it after making a request to proxy
+	responseShouldBe := `{"results":{"A":{"status":200,"frames":[{"schema":{"fields":[{"name":"time","type":"time","typeInfo":{"frame":"time.Time"}},{"name":"testClass{}","type":"number","typeInfo":{"frame":"float64"}}]},"data":{"values":[[1619784000000,1619784001000],[42.5,43.2]]}}]}}}`
 	jsonResponse, err := queryDataRes.MarshalJSON()
 
 	if err != nil {
@@ -143,7 +143,7 @@ func TestGTSListQuery(t *testing.T) {
 	}
 
 	if !bytes.Equal([]byte(responseShouldBe), jsonResponse) {
-		t.Errorf("Response does not match expected output")
+		t.Errorf(fmt.Sprintf("Response does not match expected output. JSON response is '%s'", jsonResponse))
 	}
 }
 
