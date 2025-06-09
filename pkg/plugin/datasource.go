@@ -11,6 +11,8 @@ import (
 	b "github.com/miton18/go-warp10/base"
 	"github.com/tidwall/gjson"
 	_ "github.com/tidwall/gjson"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -126,7 +128,7 @@ func (d *Datasource) query(_ context.Context, pCtx backend.PluginContext, query 
 	}
 
 	// If the result is an array made of GTS or GTSList
-	gtsListResult, err := parseGTSListResult(body)
+	gtsListResult, err := parseGTSListResult(body, wsQuery.HideLabels)
 	if err == nil {
 		return gtsListResult
 	}
@@ -210,7 +212,13 @@ func parseTableResult(result []byte) (backend.DataResponse, error) {
 	return backend.DataResponse{}, fmt.Errorf("Table parsing error")
 }
 
-func parseGTSListResult(result []byte) (backend.DataResponse, error) {
+func parseGTSListResult(result []byte, options ...bool) (backend.DataResponse, error) {
+	// manage default parameters
+	hideLabels := false
+	if len(options) > 0 {
+		hideLabels = options[0]
+	}
+
 	logger := log.New()
 
 	var gtsList = b.GTSList{}
@@ -275,14 +283,20 @@ func parseGTSListResult(result []byte) (backend.DataResponse, error) {
 					}
 				}
 
+				// Manages name and labels
+				var returnedName = gts.ClassName
+				if !hideLabels {
+					returnedName = nameWithLabels(*gts)
+				}
+
 				//Fields creation
 				var fieldValue *data.Field
 				if t == 0 {
-					fieldValue = data.NewField(gts.ClassName, nil, vValueFloat)
+					fieldValue = data.NewField(returnedName, nil, vValueFloat)
 				} else if t == 1 {
-					fieldValue = data.NewField(gts.ClassName, nil, vValueString)
+					fieldValue = data.NewField(returnedName, nil, vValueString)
 				} else {
-					fieldValue = data.NewField(gts.ClassName, nil, vValueInt)
+					fieldValue = data.NewField(returnedName, nil, vValueInt)
 				}
 
 				// add the field to the response.
@@ -453,4 +467,12 @@ func convertListToField(values []interface{}, className string) (*data.Field, er
 	}
 
 	return field, nil
+}
+func nameWithLabels(gts b.GTS) string {
+	var keyValues []string
+	for key, value := range gts.Labels {
+		keyValues = append(keyValues, fmt.Sprintf("%s=%s", key, value))
+	}
+	sort.Strings(keyValues)
+	return fmt.Sprintf("%s{%s}", gts.ClassName, strings.Join(keyValues, ","))
 }

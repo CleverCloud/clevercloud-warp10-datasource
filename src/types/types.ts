@@ -3,6 +3,7 @@ import { DataQuery } from '@grafana/schema';
 
 export interface WarpQuery extends DataQuery {
   expr: string;
+  hideLabels: boolean
 }
 
 export interface ConstProp {

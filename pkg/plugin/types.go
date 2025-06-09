@@ -26,6 +26,7 @@ type WSQuery struct {
 	DatasourceID  int          `json:"datasourceId"`
 	IntervalMs    int          `json:"intervalMs"`
 	MaxDataPoints int          `json:"maxDataPoints"`
+	HideLabels    bool         `json:"hideLabels"`
 }
 
 type WSDatasource struct {

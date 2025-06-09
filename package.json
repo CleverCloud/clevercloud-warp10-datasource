@@ -1,6 +1,6 @@
 {
   "name": "warp10",
-  "version": "0.1.43",
+  "version": "0.1.44",
   "description": "Plugin grafana datasource for warp10 platform",
   "scripts": {
     "build": "webpack -c ./.config/webpack/webpack.config.ts --env production",

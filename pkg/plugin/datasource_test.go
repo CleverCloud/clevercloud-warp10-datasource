@@ -2,7 +2,10 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	b "github.com/miton18/go-warp10/base"
 	"testing"
 )
 
@@ -99,9 +102,11 @@ func TestParseGTSListResult(t *testing.T) {
 		t.Fatal("Expected 1 frame in response")
 	}
 
+	// we suppress frame name to avoid duplication series name on panels
 	frame := resp.Frames[0]
-	if frame.Name != "testClass" {
-		t.Errorf("Expected frame name to be 'testClass', got %s", frame.Name)
+	expectedFrameName := ""
+	if frame.Name != expectedFrameName {
+		t.Errorf("Expected frame name to be '%s', got %s", expectedFrameName, frame.Name)
 	}
 
 	if len(frame.Fields) != 2 {
@@ -115,8 +120,9 @@ func TestParseGTSListResult(t *testing.T) {
 		t.Errorf("Expected first field name to be 'time', got %s", timeField.Name)
 	}
 
-	if valueField.Name != "testClass" {
-		t.Errorf("Expected second field name to be 'testClass', got %s", valueField.Name)
+	expectedFieldName := "testClass{}"
+	if valueField.Name != expectedFieldName {
+		t.Errorf("Expected second field name to be '%s', got %s", expectedFieldName, valueField.Name)
 	}
 }
 
@@ -318,5 +324,91 @@ func TestParseScalarResultBool(t *testing.T) {
 	vField := field.At(0).(bool)
 	if vField != true {
 		t.Errorf("Expected field value to be true, got %v", vField)
+	}
+}
+
+func TestNameWithLabels(t *testing.T) {
+	gtsList := `
+		{
+			"c": "testClass",
+			"l": {
+				"key1": "value1",
+				"key2": "value2"
+			},
+			"a": {},
+			"v": [
+				[1619784000000000, 42.5],
+				[1619784001000000, 43.2]
+			]
+		}`
+
+	var gts = b.GTS{}
+	if err := json.Unmarshal([]byte(gtsList), &gts); err != nil {
+		var errStr = fmt.Sprintf("json unmarshal: %v, gtslist %v", err.Error(), gtsList)
+		t.Errorf(errStr)
+	}
+
+	fullName := nameWithLabels(gts)
+
+	expectedFullName := "testClass{key1=value1,key2=value2}"
+	if fullName != expectedFullName {
+		t.Errorf(fmt.Sprintf("Wrong gts name. Expected %s got %s", expectedFullName, fullName))
+	}
+}
+
+func TestNameWithLabelsEmpty(t *testing.T) {
+	gtsList := `
+		{
+			"c": "testClass",
+			"l": {},
+			"a": {},
+			"v": [
+				[1619784000000000, 42.5],
+				[1619784001000000, 43.2]
+			]
+		}`
+
+	var gts = b.GTS{}
+	if err := json.Unmarshal([]byte(gtsList), &gts); err != nil {
+		var errStr = fmt.Sprintf("json unmarshal: %v, gtslist %v", err.Error(), gtsList)
+		t.Errorf(errStr)
+	}
+
+	fullName := nameWithLabels(gts)
+
+	expectedFullName := "testClass{}"
+	if fullName != expectedFullName {
+		t.Errorf(fmt.Sprintf("Wrong gts name. Expected %s got %s", expectedFullName, fullName))
+	}
+}
+
+func TestNameWithLabelsInOrder(t *testing.T) {
+	gtsList := `
+		{
+			"c": "testClass",
+			"l": {
+				"aKey": "aValue",
+				"cKey": "cValue",
+				"bKey": "bValue",
+				".aKey": "aValue"
+			},
+			"a": {},
+			"v": [
+				[1619784000000000, 42.5],
+				[1619784001000000, 43.2]
+			]
+		}`
+
+	var gts = b.GTS{}
+	if err := json.Unmarshal([]byte(gtsList), &gts); err != nil {
+		var errStr = fmt.Sprintf("json unmarshal: %v, gtslist %v", err.Error(), gtsList)
+		t.Errorf(errStr)
+	}
+
+	fullName := nameWithLabels(gts)
+
+	expectedFullName := "testClass{.aKey=aValue,aKey=aValue,bKey=bValue,cKey=cValue}"
+	if fullName != expectedFullName {
+		t.Errorf(fmt.Sprintf("Wrong gts name. Expected %s got %s", expectedFullName, fullName))
 	}
 }

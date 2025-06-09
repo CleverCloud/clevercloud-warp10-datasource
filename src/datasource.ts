@@ -83,7 +83,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     let message = '';
     let status = '';
 
-    const query = lastValueFrom(this.doRequest({ refId: '', expr: '1 2 +' }));
+    const query = lastValueFrom(this.doRequest({ refId: '', expr: '1 2 +', hideLabels: true}));
 
     await query
       .then((value) => {
@@ -128,6 +128,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       const query: WarpQuery = {
         expr: request.targets[0].expr,
         refId: request.targets[0].refId,
+        hideLabels: request.targets[0]?.hideLabels ? request.targets[0]?.hideLabels : false,
       };
       request.targets[0] = this.applyTemplateVariables(query, request.scopedVars);
     }
@@ -415,6 +416,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     let warpQuery: WarpQuery = {
       refId: '',
       expr: this.addDashboardVariables() + this.computeGrafanaContext() + query,
+      hideLabels: false,
     };
 
     if (this.access === 'proxy') {
