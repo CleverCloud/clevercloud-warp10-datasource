@@ -193,7 +193,7 @@ jobs:
         run: npx playwright test --project=chromium
 
       - name: Docker logs
-        if: ${{ always() && steps.run-tests.outcome == 'failure' }}
+        if: ${{ always() && steps.run-tests-chromium.outcome == 'failure' }}
         run: |
           docker logs clevercloud-warp10-datasource >& grafana-server.log
 
