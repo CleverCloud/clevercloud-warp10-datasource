@@ -18,7 +18,22 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: grafana/plugin-actions/create-plugin-update@main
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build plugin
+        run: npm run build
+
+      - name: Create plugin update
+        uses: grafana/plugin-actions/create-plugin-update@main
         # Uncomment to use a fine-grained personal access token instead of default github token
         # (For more info on how to generate the token see https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
         # with:

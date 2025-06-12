@@ -5,10 +5,12 @@ on:
     branches:
       - master
       - main
+      - dev
   pull_request:
     branches:
       - master
       - main
+      - dev
 
 permissions: read-all
 
@@ -129,11 +131,7 @@ jobs:
           overwrite: true
 
   resolve-versions:
-    name: Resolve e2e images
     runs-on: ubuntu-latest
-    timeout-minutes: 3
-    needs: build
-    if: ${{ needs.build.outputs.has-e2e == 'true' }}
     outputs:
       matrix: ${{ steps.resolve-versions.outputs.matrix }}
     steps:
@@ -142,15 +140,17 @@ jobs:
       - name: Resolve Grafana E2E versions
         id: resolve-versions
         uses: grafana/plugin-actions/e2e-version@main
+        with:
+          skip-grafana-dev-image: true
 
   playwright-tests:
-    needs: [resolve-versions, build]
+    needs: [ resolve-versions, build ]
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        GRAFANA_IMAGE: ${{fromJson(needs.resolve-versions.outputs.matrix)}}
-    name: e2e test ${{ matrix.GRAFANA_IMAGE.name }}@${{ matrix.GRAFANA_IMAGE.VERSION }}
+        GRAFANA_IMAGE: ${{ fromJson(needs.resolve-versions.outputs.matrix) }}
+    name: e2e test ${{ matrix.GRAFANA_IMAGE.name }}@${{ matrix.GRAFANA_IMAGE.version }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -177,8 +177,8 @@ jobs:
 
       - name: Start Grafana
         run: |
-          docker compose pull
-          ANONYMOUS_AUTH_ENABLED=false DEVELOPMENT=false GRAFANA_VERSION=${{ matrix.GRAFANA_IMAGE.VERSION }} GRAFANA_IMAGE=${{ matrix.GRAFANA_IMAGE.NAME }} docker compose up -d
+          docker compose -f tests/config/docker-compose-plugin.yaml pull
+          ANONYMOUS_AUTH_ENABLED=false DEVELOPMENT=false GRAFANA_VERSION=${{ matrix.GRAFANA_IMAGE.version }} GRAFANA_IMAGE=${{ matrix.GRAFANA_IMAGE.name }} docker compose -f tests/config/docker-compose-plugin.yaml up -d
 
       - name: Wait for grafana server
         uses: grafana/plugin-actions/wait-for-grafana@main
@@ -188,9 +188,9 @@ jobs:
       - name: Install Playwright Browsers
         run: npm exec playwright install chromium --with-deps
 
-      - name: Run Playwright tests
-        id: run-tests
-        run: npm run e2e
+      - name: Run Playwright tests (chromium)
+        id: run-tests-chromium
+        run: npx playwright test --project=chromium
 
       - name: Docker logs
         if: ${{ always() && steps.run-tests.outcome == 'failure' }}
@@ -204,7 +204,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: ${{ always() && steps.run-tests.outcome == 'failure' }}
         with:
-          name: ${{ matrix.GRAFANA_IMAGE.NAME }}-v${{ matrix.GRAFANA_IMAGE.VERSION }}-${{github.run_id}}-server-log
+          name: ${{ matrix.GRAFANA_IMAGE.name }}-v${{ matrix.GRAFANA_IMAGE.version }}-${{github.run_id}}-server-log
           path: grafana-server.log
           retention-days: 5
 
