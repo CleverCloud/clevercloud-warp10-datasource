@@ -58,6 +58,11 @@ jobs:
             echo "has-backend=true" >> $GITHUB_OUTPUT
           fi
 
+      - name: Clean Go module cache
+        run: |
+          rm -rf ~/go/pkg/mod/golang.org/toolchain*
+          rm -rf ~/go/pkg/mod/cache/download/golang.org/toolchain*
+
       - name: Setup Go environment
         if: steps.check-for-backend.outputs.has-backend == 'true'
         uses: actions/setup-go@v5
@@ -193,7 +198,7 @@ jobs:
         run: npx playwright test --project=chromium
 
       - name: Docker logs
-        if: ${{ always() && steps.run-tests.outcome == 'failure' }}
+        if: ${{ always() && steps.run-tests-chromium.outcome == 'failure' }}
         run: |
           docker logs clevercloud-warp10-datasource >& grafana-server.log
 

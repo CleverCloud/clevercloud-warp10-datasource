@@ -7,9 +7,11 @@ on:
     branches: [ main, master, dev ]
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+  build-and-push-image:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout code
@@ -26,8 +28,57 @@ jobs:
       - name: Build plugin
         run: npm run build
 
-      - name: Clear Playwright browser cache
-        run: rm -rf ~/.cache/ms-playwright
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build custom Grafana image
+        run: |
+          docker build \
+            --build-arg grafana_version=11.6.2 \
+            -t ghcr.io/${{ github.repository }}/grafana-warp10:latest \
+            -f tests/config/Dockerfile.grafana .
+
+      - name: Push image to ghcr.io
+        run: docker push ghcr.io/${{ github.repository }}/grafana-warp10:latest
+
+  test:
+    needs: build-and-push-image
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    services:
+      warp10:
+        image: warp10io/warp10:3.5.0-alpine
+        ports:
+          - 8080:8080
+          - 8081:8081
+        options: >-
+          --health-cmd="curl -f -XPOST -d 'RETURN 1' http://localhost:8080/api/v0/exec"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+
+      grafana:
+        image: ghcr.io/${{ github.repository }}/grafana-warp10:latest
+        ports:
+          - 3000:3000
+        env:
+          GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: clevercloud-warp10-datasource
+          WARP10_URL: http://warp10:8080
+          GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+          GF_LOG_LEVEL: debug
+        options: >-
+          --health-cmd="curl -f http://localhost:3000/api/health"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps
@@ -38,39 +89,22 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
 
-      - name: Start Grafana and Warp10 stack
-        run: docker compose -f tests/config/docker-compose-plugin.yaml up -d
-
-      - name: Wait for Warp10 to be healthy
-        run: |
-          echo "Waiting for Warp10 to be healthy..."
-          for i in {1..30}; do
-            STATUS=$(docker inspect --format='{{.State.Health.Status}}' warp10)
-            if [ "$STATUS" = "healthy" ]; then
-              echo "Warp10 is healthy!"
-              exit 0
-            fi
-            echo "Warp10 status: $STATUS... retrying in 5s"
-            sleep 5
-          done
-          echo "Warp10 did not become healthy in time."
-          docker compose -f tests/config/docker-compose-plugin.yaml logs
-          exit 1
-
       - name: Wait for Grafana to be healthy
         run: |
           echo "Waiting for Grafana to be healthy..."
           for i in {1..30}; do
-            STATUS=$(docker inspect --format='{{.State.Health.Status}}' clevercloud-warp10-datasource)
-            if [ "$STATUS" = "healthy" ]; then
-              echo "Grafana is healthy!"
-              exit 0
+            STATUS=$(docker ps --filter "name=grafana" --format "{{.ID}}" | head -n 1)
+            if [ ! -z "$STATUS" ]; then
+              if curl -fs http://localhost:3000/api/health; then
+                echo "Grafana is up!"
+                exit 0
+              fi
             fi
-            echo "Current status: $STATUS... retrying in 5s"
+            echo "Grafana not ready... retrying in 5s"
             sleep 5
           done
           echo "Grafana did not become healthy in time."
-          docker compose -f tests/config/docker-compose-plugin.yaml logs
+          docker ps -a
           exit 1
 
       - name: Run Playwright tests (Chromium)
@@ -79,13 +113,26 @@ jobs:
       - name: Run Playwright tests (Firefox)
         run: npx playwright test --project=firefox
 
-      - name: Shutdown services
-        if: always()
-        run: docker compose -f tests/config/docker-compose-plugin.yaml down
-
-      - name: Upload test report
+      - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
           path: playwright-report/
+
+      - name: Upload service logs
+        if: always()
+        run: |
+          GRAFANA_CID=$(docker ps --filter "name=grafana" --format "{{.ID}}" | head -n 1)
+          WARP10_CID=$(docker ps --filter "name=warp10" --format "{{.ID}}" | head -n 1)
+          docker logs $GRAFANA_CID > grafana.log 2>&1 || echo "Failed to get Grafana logs"
+          docker logs $WARP10_CID > warp10.log 2>&1 || echo "Failed to get Warp10 logs"
+
+      - name: Upload service logs as artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-logs
+          path: |
+            grafana.log
+            warp10.log

@@ -65,6 +65,9 @@ export default defineConfig<PluginOptions>({
       use: {
         ...devices['Desktop Chrome'],
         storageState: 'playwright/.auth/admin.json',
+        launchOptions: {
+          args: ['--enable-unsafe-swiftshader'],
+        },
       },
       dependencies: ['auth'],
     },
