@@ -1,0 +1,91 @@
+name: Playwright Tests
+
+on:
+  push:
+    branches: [ main, master, dev ]
+  pull_request:
+    branches: [ main, master, dev ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build plugin
+        run: npm run build
+
+      - name: Clear Playwright browser cache
+        run: rm -rf ~/.cache/ms-playwright
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Start Grafana and Warp10 stack
+        run: docker compose -f tests/config/docker-compose-plugin.yaml up -d
+
+      - name: Wait for Warp10 to be healthy
+        run: |
+          echo "Waiting for Warp10 to be healthy..."
+          for i in {1..30}; do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' warp10)
+            if [ "$STATUS" = "healthy" ]; then
+              echo "Warp10 is healthy!"
+              exit 0
+            fi
+            echo "Warp10 status: $STATUS... retrying in 5s"
+            sleep 5
+          done
+          echo "Warp10 did not become healthy in time."
+          docker compose -f tests/config/docker-compose-plugin.yaml logs
+          exit 1
+
+      - name: Wait for Grafana to be healthy
+        run: |
+          echo "Waiting for Grafana to be healthy..."
+          for i in {1..30}; do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' clevercloud-warp10-datasource)
+            if [ "$STATUS" = "healthy" ]; then
+              echo "Grafana is healthy!"
+              exit 0
+            fi
+            echo "Current status: $STATUS... retrying in 5s"
+            sleep 5
+          done
+          echo "Grafana did not become healthy in time."
+          docker compose -f tests/config/docker-compose-plugin.yaml logs
+          exit 1
+
+      - name: Run Playwright tests (Chromium)
+        run: npx playwright test --project=chromium
+
+      - name: Run Playwright tests (Firefox)
+        run: npx playwright test --project=firefox
+
+      - name: Shutdown services
+        if: always()
+        run: docker compose -f tests/config/docker-compose-plugin.yaml down
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
