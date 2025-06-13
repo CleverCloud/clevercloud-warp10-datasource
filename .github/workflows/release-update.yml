@@ -1,0 +1,117 @@
+name: release-update.yml
+
+on:
+  push:
+    branches: [ main, master, dev, release ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get plugin version
+        id: version
+        run: |
+          # Récupère la version depuis plugin.json
+          PLUGIN_VERSION=$(jq -r '.info.version' src/plugin.json)
+          
+          # Vérifie le format de version (semver)
+          if [[ ! $PLUGIN_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "!!Invalid version in plugin.json: $PLUGIN_VERSION !!"
+            exit 1
+          fi
+          
+          # Si déclenché par un tag, vérifie la cohérence
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            TAG_VERSION=${GITHUB_REF#refs/tags/v}
+            if [[ $TAG_VERSION != $PLUGIN_VERSION ]]; then
+              echo "❌ Incoherent versions:"
+              echo "   Tag: $TAG_VERSION"
+              echo "   plugin.json: $PLUGIN_VERSION"
+              exit 1
+            fi
+          fi
+          
+          # Compare avec package.json si besoin
+          PKG_VERSION=$(jq -r '.version' package.json)
+          if [[ $PKG_VERSION != $PLUGIN_VERSION ]]; then
+            echo "⚠️ The version is different between package.json: ($PKG_VERSION) and plugin.json: ($PLUGIN_VERSION)"
+            exit 1
+          fi
+          
+          echo "version=$PLUGIN_VERSION" >> $GITHUB_OUTPUT
+          echo "Valid version $PLUGIN_VERSION "
+
+      - name: Create Git tag if new version
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+          TAG="v${{ steps.version.outputs.version }}"
+
+          # Fetch all tags from remote
+          git fetch --tags
+
+          # Check if tag exists locally or remotely
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists locally. Skipping tag creation."
+          elif git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
+            echo "Tag $TAG already exists on remote. Skipping tag creation."
+          else
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+            echo "New Tag Created: $TAG"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: |
+          npm run build
+          mkdir -p tmp-packaging
+          cp -r src tmp-packaging/
+          cp package.json src/plugin.json README.md LICENSE CHANGELOG.md tmp-packaging/
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build backend binaries
+        uses: magefile/mage-action@v3
+        with:
+          version: latest
+          args: buildAll
+
+      - name: Package artifacts
+        run: |
+          chmod +x ./scripts/package-plugin.sh
+          ./scripts/package-plugin.sh 'gpx_warp10_*' clevercloud-warp10-datasource ${{ steps.version.outputs.version }}
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          draft: false
+          files: |
+            clevercloud-warp10-datasource-${{ steps.version.outputs.version }}.*.zip
+            clevercloud-warp10-datasource-${{ steps.version.outputs.version }}.*.zip.sha1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
