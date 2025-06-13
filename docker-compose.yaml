@@ -1,4 +1,4 @@
-version: '3.0'
+version: '3.4'
 
 services:
   grafana:
@@ -6,9 +6,15 @@ services:
     build:
       context: ./.config
       args:
-        grafana_version: ${GRAFANA_VERSION:-11.5.0}
+        grafana_version: ${GRAFANA_VERSION:-11.6.2}
     ports:
       - 3000:3000/tcp
     volumes:
       - ./dist:/var/lib/grafana/plugins/clevercloud-warp10-datasource
       - ./provisioning:/etc/grafana/provisioning
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:3000/login | grep -q 'Grafana'"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s

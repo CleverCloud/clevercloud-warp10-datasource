@@ -36,7 +36,7 @@
     "updated": "2025-01-21"
   },
   "dependencies": {
-    "grafanaDependency": "<11.5 >=9.5.3",
+    "grafanaDependency": "<=11.6.1 >=10.0.0",
     "plugins": []
   }
 }
