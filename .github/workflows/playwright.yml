@@ -43,8 +43,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build plugin
+      - name: Setup Go environment
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install Mage
+        run: go install github.com/magefile/mage@latest
+        env:
+          GOBIN: /usr/local/bin
+          PATH: /usr/local/bin:$PATH
+
+      - name: Build plugin frontend
         run: npm run build
+
+      - name: Build plugin backend (Linux binary)
+        run: mage -v build:linux
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3

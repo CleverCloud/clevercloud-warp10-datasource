@@ -97,6 +97,12 @@ You got:
 
 ![Make a query for table](/src/assets/readme/readme-table-usage.png)
 
+#### Supported types
+
+Since it is possible to define any type in warp10, we had to choose which ones to support. See [the documentation about supported types](./doc/warp10-supported-types.md).
+
+If you need the support of another type, see [how to contribute](./CONTRIBUTING.md).
+
 ### Define Templating variables
 
 You can make a WarpScript query to build the choice list of your templating variables. In the dashboard settings, select
