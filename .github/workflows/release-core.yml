@@ -1,0 +1,169 @@
+name: Reusable Release Workflow
+
+on:
+  workflow_call:
+    inputs:
+      force_release_recreation:
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get plugin version
+        id: version
+        run: |
+          PLUGIN_VERSION=$(jq -r '.info.version' src/plugin.json)
+          if [[ ! $PLUGIN_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Invalid version in plugin.json: $PLUGIN_VERSION"
+            exit 1
+          fi
+
+          PKG_VERSION=$(jq -r '.version' package.json)
+          if [[ $PKG_VERSION != $PLUGIN_VERSION ]]; then
+            echo "⚠️ Version mismatch between package.json: ($PKG_VERSION) and plugin.json: ($PLUGIN_VERSION)"
+            exit 1
+          fi
+
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            TAG_VERSION=${GITHUB_REF#refs/tags/v}
+            if [[ $TAG_VERSION != $PLUGIN_VERSION ]]; then
+              echo "❌ Inconsistent versions:"
+              echo "   Tag: $TAG_VERSION"
+              echo "   plugin.json: $PLUGIN_VERSION"
+              exit 1
+            fi
+          fi
+
+          echo "version=$PLUGIN_VERSION" >> $GITHUB_OUTPUT
+          echo "✔️ Valid version $PLUGIN_VERSION"
+
+      - name: Create Git tag if new version
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          TAG="v${{ steps.version.outputs.version }}"
+          git fetch --tags
+
+          if git rev-parse "$TAG" >/dev/null 2>&1 || git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
+            echo "✅ Tag $TAG already exists. Skipping tag creation."
+          else
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+            echo "🆕 Created tag $TAG"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if release already exists
+        id: check_release
+        shell: bash
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          if [[ "${{ inputs.force_release_recreation }}" == "true" ]]; then
+            echo "⏩ Forced recreation. Proceeding."
+            echo "skip_release=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          EXISTS=$(gh release view "$TAG" --json name -q .name 2>/dev/null || echo "notfound")
+          if [[ "$EXISTS" != "notfound" ]]; then
+            echo "✅ Release already exists. Skipping."
+            echo "skip_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip_release=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Exit early if release exists
+        if: steps.check_release.outputs.skip_release == 'true'
+        run: |
+          echo "🛑 Workflow stopped: Release already published."
+          exit 0
+
+      - name: Setup Node.js
+        if: steps.check_release.outputs.skip_release == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        if: steps.check_release.outputs.skip_release == 'false'
+        run: npm ci
+
+      - name: Build frontend
+        if: steps.check_release.outputs.skip_release == 'false'
+        run: |
+          npm run build
+
+      - name: Setup Go
+        if: steps.check_release.outputs.skip_release == 'false'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build backend binaries
+        if: steps.check_release.outputs.skip_release == 'false'
+        uses: magefile/mage-action@v3
+        with:
+          version: latest
+          args: buildAll
+
+      - name: Package artifacts
+        if: steps.check_release.outputs.skip_release == 'false'
+        run: |
+          chmod +x ./scripts/package-plugin.sh
+          ./scripts/package-plugin.sh 'dist/gpx_warp10_*' clevercloud-warp10-datasource ${{ steps.version.outputs.version }}
+
+      - name: Move generated zips to dist
+        if: steps.check_release.outputs.skip_release == 'false'
+        run: |
+          mkdir -p dist
+          mv *.zip dist/ || true
+          mv *.sha1 dist/ || true
+
+      - name: Show generated files
+        if: steps.check_release.outputs.skip_release == 'false'
+        run: ls -al dist/
+
+      - name: Get release metadata
+        if: steps.check_release.outputs.skip_release == 'false'
+        id: relmeta
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          DATE=$(date +'%Y-%m-%d')
+          COMMIT=$(git rev-parse --short HEAD)
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "date=$DATE" >> $GITHUB_OUTPUT
+          echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+          echo "commit_msg=$COMMIT_MSG" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        if: steps.check_release.outputs.skip_release == 'false'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: clevercloud-warp10-datasource v${{ steps.relmeta.outputs.version }}
+          body: |
+            [${{ steps.relmeta.outputs.version }}] - ${{ steps.relmeta.outputs.date }}
+            Commit: ${{ steps.relmeta.outputs.commit }}
+            - ${{ steps.relmeta.outputs.commit_msg }}
+
+            See CHANGELOG.md for details.
+          draft: true
+          files: |
+            dist/clevercloud-warp10-datasource-${{ steps.version.outputs.version }}.*.zip
+            dist/clevercloud-warp10-datasource-${{ steps.version.outputs.version }}.*.zip.sha1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
