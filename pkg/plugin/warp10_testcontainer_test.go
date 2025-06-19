@@ -25,8 +25,10 @@ func TestMain(m *testing.M) {
 	req := testcontainers.ContainerRequest{
 		Image:        "warp10io/warp10:3.4.1-alpine",
 		ExposedPorts: []string{"8080/tcp", "8081/tcp"},
-		WaitingFor:   wait.ForListeningPort("8080/tcp"),
-	}
+        WaitingFor: wait.ForHTTP("/api/v0/exec").
+              WithStartupTimeout(60 * time.Second).
+              WithPort("8080/tcp"),
+              }
 	warpContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: req,
 		Started:          true,

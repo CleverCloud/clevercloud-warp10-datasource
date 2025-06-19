@@ -3,21 +3,18 @@ name: CI
 on:
   push:
     branches:
-      - master
-      - main
-      - dev
+      - '**'
   pull_request:
     branches:
-      - master
-      - main
-      - dev
-
-permissions: read-all
+      - '**'
 
 jobs:
   build:
     name: Build, lint and unit tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
     outputs:
       plugin-id: ${{ steps.metadata.outputs.plugin-id }}
       plugin-version: ${{ steps.metadata.outputs.plugin-version }}
@@ -26,7 +23,9 @@ jobs:
     env:
       GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Setup Node.js environment
         uses: actions/setup-node@v4
         with:
@@ -38,10 +37,13 @@ jobs:
 
       - name: Check types
         run: npm run typecheck
+
       - name: Lint
         run: npm run lint
+
       - name: Unit tests
         run: npm run test:ci
+
       - name: Build frontend
         run: |
           if [ "${{ github.event_name }}" == "push" ] && [ "${{ github.ref }}" == "refs/heads/main" ]; then
@@ -57,11 +59,6 @@ jobs:
           then
             echo "has-backend=true" >> $GITHUB_OUTPUT
           fi
-
-      - name: Clean Go module cache
-        run: |
-          rm -rf ~/go/pkg/mod/golang.org/toolchain*
-          rm -rf ~/go/pkg/mod/cache/download/golang.org/toolchain*
 
       - name: Setup Go environment
         if: steps.check-for-backend.outputs.has-backend == 'true'
@@ -142,6 +139,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Resolve Grafana E2E versions
         id: resolve-versions
         uses: grafana/plugin-actions/e2e-version@main
@@ -150,68 +148,28 @@ jobs:
 
   playwright-tests:
     needs: [ resolve-versions, build ]
-    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         GRAFANA_IMAGE: ${{ fromJson(needs.resolve-versions.outputs.matrix) }}
-    name: e2e test ${{ matrix.GRAFANA_IMAGE.name }}@${{ matrix.GRAFANA_IMAGE.version }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    uses: ./.github/workflows/playwright.yml
+    with:
+      grafana-version: ${{ matrix.GRAFANA_IMAGE.version }}
+      upload-artifacts: false
 
-      - name: Download plugin
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-          name: ${{ needs.build.outputs.plugin-id }}-${{ needs.build.outputs.plugin-version }}
-
-      - name: Execute permissions on binary
-        if: needs.build.outputs.has-backend == 'true'
-        run: |
-          chmod +x ./dist/gpx_*
-
-      - name: Setup Node.js environment
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Install dev dependencies
-        run: npm ci
-
-      - name: Start Grafana
-        run: |
-          docker compose -f tests/config/docker-compose-plugin.yaml pull
-          ANONYMOUS_AUTH_ENABLED=false DEVELOPMENT=false GRAFANA_VERSION=${{ matrix.GRAFANA_IMAGE.version }} GRAFANA_IMAGE=${{ matrix.GRAFANA_IMAGE.name }} docker compose -f tests/config/docker-compose-plugin.yaml up -d
-
-      - name: Wait for grafana server
-        uses: grafana/plugin-actions/wait-for-grafana@main
-        with:
-          url: http://localhost:3000/login
-
-      - name: Install Playwright Browsers
-        run: npm exec playwright install chromium --with-deps
-
-      - name: Run Playwright tests (chromium)
-        id: run-tests-chromium
-        run: npx playwright test --project=chromium
-
-      - name: Docker logs
-        if: ${{ always() && steps.run-tests-chromium.outcome == 'failure' }}
-        run: |
-          docker logs clevercloud-warp10-datasource >& grafana-server.log
-
-      - name: Stop grafana docker
-        run: docker compose down
-
-      - name: Upload server log
-        uses: actions/upload-artifact@v4
-        if: ${{ always() && steps.run-tests.outcome == 'failure' }}
-        with:
-          name: ${{ matrix.GRAFANA_IMAGE.name }}-v${{ matrix.GRAFANA_IMAGE.version }}-${{github.run_id}}-server-log
-          path: grafana-server.log
-          retention-days: 5
+#
+#      - name: Docker logs
+#        if: ${{ always() && steps.run-tests-chromium.outcome == 'failure' }}
+#        run: |
+#          docker logs clevercloud-warp10-datasource >& grafana-server.log
+#
+#      - name: Upload server log
+#        uses: actions/upload-artifact@v4
+#        if: ${{ always() && steps.run-tests.outcome == 'failure' }}
+#        with:
+#          name: ${{ matrix.GRAFANA_IMAGE.name }}-v${{ matrix.GRAFANA_IMAGE.version }}-${{github.run_id}}-server-log
+#          path: grafana-server.log
+#          retention-days: 5
 
       # Uncomment this step to upload the Playwright report to Github artifacts.
       # If your repository is public, the report will be public on the Internet so beware not to expose sensitive information.
