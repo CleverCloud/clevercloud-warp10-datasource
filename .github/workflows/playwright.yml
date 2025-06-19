@@ -1,11 +1,19 @@
 name: Playwright Tests
 
 on:
-  push:
-    branches: [ main, master, dev ]
-  pull_request:
-    branches: [ main, master, dev ]
-
+  workflow_call:
+    inputs:
+      grafana-version:
+        required: true
+        type: string
+      with-firefox:
+        required: false
+        type: boolean
+        default: false
+      upload-artifacts:
+        required: false
+        type: boolean
+        default: true
 jobs:
   build-and-push-image:
     runs-on: ubuntu-22.04
@@ -20,7 +28,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: '22'
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
@@ -38,12 +47,12 @@ jobs:
       - name: Build custom Grafana image
         run: |
           docker build \
-            --build-arg grafana_version=11.6.2 \
-            -t ghcr.io/${{ github.repository }}/grafana-warp10:latest \
+            --build-arg grafana_version=${{ inputs.grafana-version }} \
+            -t ghcr.io/${{ github.repository }}/grafana-warp10:${{ inputs.grafana-version }} \
             -f tests/config/Dockerfile.grafana .
 
       - name: Push image to ghcr.io
-        run: docker push ghcr.io/${{ github.repository }}/grafana-warp10:latest
+        run: docker push ghcr.io/${{ github.repository }}/grafana-warp10:${{ inputs.grafana-version }}
 
   test:
     needs: build-and-push-image
@@ -61,7 +70,7 @@ jobs:
           --health-interval=10s --health-timeout=5s --health-retries=10
 
       grafana:
-        image: ghcr.io/${{ github.repository }}/grafana-warp10:latest
+        image: ghcr.io/${{ github.repository }}/grafana-warp10:${{ inputs.grafana-version }}
         ports:
           - 3000:3000
         env:
@@ -111,17 +120,18 @@ jobs:
         run: npx playwright test --project=chromium
 
       - name: Run Playwright tests (Firefox)
+        if: inputs.with-firefox == true
         run: npx playwright test --project=firefox
 
       - name: Upload test results
-        if: always()
+        if: always() && inputs.upload-artifacts == true
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
           path: playwright-report/
 
       - name: Upload service logs
-        if: always()
+        if: always() && inputs.upload-artifacts == true
         run: |
           GRAFANA_CID=$(docker ps --filter "name=grafana" --format "{{.ID}}" | head -n 1)
           WARP10_CID=$(docker ps --filter "name=warp10" --format "{{.ID}}" | head -n 1)
@@ -129,7 +139,7 @@ jobs:
           docker logs $WARP10_CID > warp10.log 2>&1 || echo "Failed to get Warp10 logs"
 
       - name: Upload service logs as artifacts
-        if: always()
+        if: always() && inputs.upload-artifacts == true
         uses: actions/upload-artifact@v4
         with:
           name: service-logs
