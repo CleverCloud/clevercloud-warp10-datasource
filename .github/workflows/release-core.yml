@@ -105,9 +105,6 @@ jobs:
         if: steps.check_release.outputs.skip_release == 'false'
         run: |
           npm run build
-          mkdir -p tmp-packaging
-          cp -r src tmp-packaging/
-          cp package.json src/plugin.json README.md LICENSE CHANGELOG.md tmp-packaging/
 
       - name: Setup Go
         if: steps.check_release.outputs.skip_release == 'false'
@@ -164,7 +161,7 @@ jobs:
             - ${{ steps.relmeta.outputs.commit_msg }}
 
             See CHANGELOG.md for details.
-          draft: false
+          draft: true
           files: |
             dist/clevercloud-warp10-datasource-${{ steps.version.outputs.version }}.*.zip
             dist/clevercloud-warp10-datasource-${{ steps.version.outputs.version }}.*.zip.sha1
