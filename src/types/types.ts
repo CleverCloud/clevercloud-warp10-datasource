@@ -15,6 +15,7 @@ export interface ConstProp {
  * These are options configured for each DataSource instance
  */
 export interface WarpDataSourceOptions extends DataSourceJsonData {
+  url?: string;
   path?: string;
   const?: ConstProp[];
   macro?: ConstProp[];

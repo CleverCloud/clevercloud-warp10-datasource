@@ -21,8 +21,13 @@ export function ConfigEditor(props: Props) {
     const jsonData = {
       ...options.jsonData,
       path: event.target.value,
+      url: event.target.value,
     };
-    onOptionsChange({ ...options, jsonData });
+    onOptionsChange({
+      ...options,
+      jsonData,
+      url: event.target.value,
+    });
   };
 
   // Modification select access
@@ -156,7 +161,7 @@ export function ConfigEditor(props: Props) {
       <div>
         <h1>HTTP Address</h1>
         <InlineField label="URL" labelWidth={12} tooltip={'Do not append /api/v0/exec at the end of the URL'}>
-          <Input onChange={onPathChange} width={60} value={options.jsonData.path} />
+          <Input onChange={onPathChange} id="url" width={60} value={options.jsonData.url} />
         </InlineField>
         <InlineField
           label="Access"
