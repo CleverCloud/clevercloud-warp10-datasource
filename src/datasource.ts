@@ -44,7 +44,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    */
   constructor(instanceSettings: DataSourceInstanceSettings<WarpDataSourceOptions>) {
     super(instanceSettings);
-    this.path = instanceSettings.jsonData.path ?? '';
+    this.path = instanceSettings.jsonData.path || instanceSettings.url || '';
 
     this.access = instanceSettings.access ?? 'proxy';
 
@@ -67,7 +67,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
         this.addDashboardVariables() +
         this.computeGrafanaContext() +
         this.computePanelRepeatVars(_scopedVars) +
-        query.expr,
+        (query.expr ?? ''),
     };
   }
 
@@ -111,12 +111,21 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     // Fix to make the change progressive in Grafana
     // Previous version of these plugin as already be deployed
     // this support previous plugin's data structure version
+
+    const validTargets = request.targets.filter(
+      t => t.expr !== undefined && t.expr !== null && String(t.expr).trim() !== ''
+    );
+    if (!validTargets.length) {
+      return from([{ data: [] }]);
+    }
+    request.targets = validTargets;
+
     // @ts-ignore
     request.targets = request.targets.map((t) => {
       if (!t.expr && t.expr !== '') {
         console.warn('Deprecate request detected');
         // @ts-ignore
-        t.expr = t.queryText;
+        t.expr = t.queryText ?? '';
       }
       return t;
     });
@@ -126,7 +135,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     // apply headers for proxy mode
     if (this.access === 'proxy') {
       const query: WarpQuery = {
-        expr: request.targets[0].expr,
+        expr: request.targets[0].expr ?? '',
         refId: request.targets[0].refId,
         hideLabels: request.targets[0]?.hideLabels ? request.targets[0]?.hideLabels : false,
       };
@@ -235,7 +244,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     return getBackendSrv().fetch<T>({
       url: this.path + '/api/v0/exec',
       method: 'POST',
-      data: query.expr,
+      data: query.expr ?? '',
       headers: [
         ['Accept', 'undefined'],
         ['Content-Type', 'text/plain; charset=UTF-8'],
@@ -415,7 +424,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   async metricFindQuery(query: string, options?: any): Promise<MetricFindValue[]> {
     let warpQuery: WarpQuery = {
       refId: '',
-      expr: this.addDashboardVariables() + this.computeGrafanaContext() + query,
+      expr: this.addDashboardVariables() + this.computeGrafanaContext() + query ?? '',
       hideLabels: false,
     };
 
