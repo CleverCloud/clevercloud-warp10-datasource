@@ -1,0 +1,128 @@
+name: playwright-release-test.yml
+
+on:
+  push:
+    branches:
+      - release
+
+
+jobs:
+  test-release:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        grafana-version: ['11.6.2']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install jq, curl, unzip
+        run: sudo apt-get update && sudo apt-get install -y jq curl unzip
+
+      - name: Download latest release plugin (linux_amd64)
+        run: |
+          URL=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest \
+            | jq -r '.assets[] | select(.name | endswith("linux_amd64.zip")) | .browser_download_url')
+          echo "Plugin URL: $URL"
+          curl -L "$URL" -o plugin.zip
+          unzip -o plugin.zip -d plugin-src
+
+      - name: Install dependencies in plugin-src
+        run: cd plugin-src && npm ci
+
+      - name: Build plugin in plugin-src
+        run: cd plugin-src && npm run build
+
+      - name: Prepare built plugin for Docker image
+        run: |
+          mkdir -p clevercloud-warp10-datasource
+          cp -r plugin-src/dist/* clevercloud-warp10-datasource/
+          cp plugin-src/plugin.json clevercloud-warp10-datasource/
+          # (add any assets if needed)
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build custom Grafana image
+        run: |
+          docker build \
+            --build-arg grafana_version=${{ matrix.grafana-version }} \
+            -t ghcr.io/${{ github.repository }}/grafana-warp10:${{ matrix.grafana-version }} \
+            -f release/config/Dockerfile.grafana .
+
+      - name: Push image to ghcr.io
+        run: docker push ghcr.io/${{ github.repository }}/grafana-warp10:${{ matrix.grafana-version }}
+
+  test:
+    needs: test-release
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        grafana-version: [ '11.6.2' ]
+    services:
+      warp10:
+        image: warp10io/warp10:3.5.0-alpine
+        ports:
+          - 8080:8080
+          - 8081:8081
+        options: >-
+          --health-cmd="curl -f -XPOST -d 'RETURN 1' http://localhost:8080/api/v0/exec"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+
+      grafana:
+        image: ghcr.io/${{ github.repository }}/grafana-warp10:${{ matrix.grafana-version }}
+        ports:
+          - 3000:3000
+        env:
+          GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: clevercloud-warp10-datasource
+          WARP10_URL: http://warp10:8080
+          GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+          GF_LOG_LEVEL: debug
+        options: >-
+          --health-cmd="curl -f http://localhost:3000/api/health"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Wait for Grafana to be healthy
+        run: |
+          echo "Waiting for Grafana to be healthy..."
+          for i in {1..30}; do
+            STATUS=$(docker ps --filter "name=grafana" --format "{{.ID}}" | head -n 1)
+            if [ ! -z "$STATUS" ]; then
+              if curl -fs http://localhost:3000/api/health; then
+                echo "Grafana is up!"
+                exit 0
+              fi
+            fi
+            echo "Grafana not ready... retrying in 5s"
+            sleep 5
+          done
+          echo "Grafana did not become healthy in time."
+          docker ps -a
+          exit 1
+
+      - name: Run Playwright tests (Chromium)
+        run: npx playwright test --project=chromium

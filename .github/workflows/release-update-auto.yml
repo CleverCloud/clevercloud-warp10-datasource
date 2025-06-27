@@ -1,0 +1,19 @@
+name: Auto Release
+
+on:
+  push:
+    branches: [release]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  call-release:
+    uses: ./.github/workflows/release-core.yml
+    with:
+      force_release_recreation: true
