@@ -16,4 +16,4 @@ jobs:
   call-release:
     uses: ./.github/workflows/release-core.yml
     with:
-      force_release_recreation: false
+      force_release_recreation: true
