@@ -105,9 +105,6 @@ jobs:
         if: steps.check_release.outputs.skip_release == 'false'
         run: |
           npm run build
-          mkdir -p tmp-packaging
-          cp -r src tmp-packaging/
-          cp package.json src/plugin.json README.md LICENSE CHANGELOG.md tmp-packaging/
 
       - name: Setup Go
         if: steps.check_release.outputs.skip_release == 'false'
@@ -125,8 +122,45 @@ jobs:
       - name: Package artifacts
         if: steps.check_release.outputs.skip_release == 'false'
         run: |
-          chmod +x ./scripts/package-plugin.sh
-          ./scripts/package-plugin.sh 'dist/gpx_warp10_*' clevercloud-warp10-datasource ${{ steps.version.outputs.version }}
+          VERSION=${{ steps.version.outputs.version }}
+          PLUGIN=clevercloud-warp10-datasource
+
+          for BIN in dist/gpx_warp10_*; do
+            # Extract arch and os from filename
+            NAME=$(basename $BIN)                   # e.g., gpx_warp10_linux_amd64
+            ARCH_OS="${NAME#gpx_warp10_}"           # e.g., linux_amd64
+            PKGDIR="tmp-packaging/$PLUGIN"
+
+            rm -rf $PKGDIR
+            mkdir -p $PKGDIR
+
+            # Copy all needed files
+            [ -d src/assets ] && cp -r src/assets "$PKGDIR/"
+            [ -d src/img ] && cp -r src/img "$PKGDIR/"
+            [ -f dist/module.js ] && cp dist/module.js $PKGDIR/
+            [ -f dist/go_plugin_build_manifest ] && cp dist/go_plugin_build_manifest $PKGDIR/
+            [ -f src/plugin.json ] && cp src/plugin.json $PKGDIR/plugin.json
+            [ -f README.md ] && cp README.md $PKGDIR/
+            [ -f LICENSE ] && cp LICENSE $PKGDIR/
+            [ -f CHANGELOG.md ] && cp CHANGELOG.md $PKGDIR/
+
+            # Only copy the current binary!
+            cp "$BIN" $PKGDIR/
+
+            jq --arg dep "<12.0 >=9.5.3" '.dependencies.grafanaDependency = $dep' "$PKGDIR/plugin.json" > "$PKGDIR/plugin.json.tmp" && mv "$PKGDIR/plugin.json.tmp" "$PKGDIR/plugin.json"
+            echo "Updated grafanaDependency:"
+            jq .dependencies.grafanaDependency "$PKGDIR/plugin.json"
+          
+            # Show for debug
+            echo "Zipping for $ARCH_OS with:"
+            ls -l $PKGDIR
+
+            # Make ZIP: top-level folder is clevercloud-warp10-datasource
+            (cd tmp-packaging && zip -r "../${PLUGIN}-${VERSION}.${ARCH_OS}.zip" "$PLUGIN")
+
+            # Optionally: checksum
+            sha1sum "${PLUGIN}-${VERSION}.${ARCH_OS}.zip" > "${PLUGIN}-${VERSION}.${ARCH_OS}.zip.sha1"
+          done
 
       - name: Move generated zips to dist
         if: steps.check_release.outputs.skip_release == 'false'
