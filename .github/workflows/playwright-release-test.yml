@@ -1,0 +1,119 @@
+name: playwright-release-test.yml
+
+on:
+  push:
+    branches:
+      - release
+
+jobs:
+  test-release:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        grafana-version: ['11.6.2']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (jq, curl, unzip)
+        run: sudo apt-get update && sudo apt-get install -y jq curl unzip
+
+      - name: Build Grafana with Warp10 plugin
+        run: |
+          export GRAFANA_VERSION=${{ matrix.grafana-version }}
+          export GRAFANA_SHA_256=132b532fb3108fccc18848ce158ac3650c10515b9c6a2e5bd73549bb6bc36dff
+          export GRAFANA_PLUGINS="https://github.com/CleverCloud/clevercloud-warp10-datasource/releases/download/0.1.44/clevercloud-warp10-datasource-0.1.44.linux_amd64.zip"
+          export GF_PLUGIN_DIR=./data/plugins
+          export GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=clevercloud-warp10-datasource
+          chmod +x release/config/build.sh
+          ./release/config/build.sh
+
+      - name: Build Docker image from built Grafana folder
+        run: |
+          docker build -t grafana-custom -f release/config/Dockerfile.grafana .
+
+      - name: Tag Docker image for GitHub Container Registry
+        run: |
+          docker tag grafana-custom ghcr.io/${{ github.repository }}/grafana-warp10:${{ matrix.grafana-version }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image to ghcr.io
+        run: docker push ghcr.io/${{ github.repository }}/grafana-warp10:${{ matrix.grafana-version }}
+
+  test:
+    needs: test-release
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        grafana-version: ['11.6.2']
+    services:
+      warp10:
+        image: warp10io/warp10:3.5.0-alpine
+        ports:
+          - 8080:8080
+          - 8081:8081
+        options: >-
+          --health-cmd="curl -f -XPOST -d 'RETURN 1' http://localhost:8080/api/v0/exec"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+
+      grafana:
+        image: ghcr.io/${{ github.repository }}/grafana-warp10:${{ matrix.grafana-version }}
+        ports:
+          - 3000:3000
+        options: >-
+          --name grafana
+          --health-cmd="curl -f http://localhost:3000/api/health"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+        env:
+          GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: clevercloud-warp10-datasource
+          WARP10_URL: http://warp10:8080
+          GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+          GF_LOG_LEVEL: debug
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Print Grafana logs
+        if: always()
+        run: docker logs grafana || echo "No logs found"
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Wait for Grafana to be healthy
+        run: |
+          echo "Waiting for Grafana to be healthy..."
+          for i in {1..30}; do
+            if curl -fs http://localhost:3000/api/health; then
+              echo "Grafana is up!"
+              exit 0
+            fi
+            echo "Grafana not ready... retrying in 5s"
+            sleep 5
+          done
+          echo "Grafana did not become healthy in time."
+          docker ps -a
+          exit 1
+
+      - name: Run Playwright tests (Chromium)
+        run: npx playwright test --project=chromium
