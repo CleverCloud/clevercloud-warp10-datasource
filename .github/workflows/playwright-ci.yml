@@ -1,0 +1,16 @@
+name: Playwright CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  playwright-tests:
+    uses: ./.github/workflows/playwright.yml
+    with:
+      grafana-version: 11.6.3
+      with-firefox: true
