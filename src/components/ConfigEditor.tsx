@@ -156,12 +156,14 @@ export function ConfigEditor(props: Props) {
       <div>
         <h1>HTTP Address</h1>
         <InlineField label="URL" labelWidth={12} tooltip={'Do not append /api/v0/exec at the end of the URL'}>
-          <Input onChange={onPathChange} width={60} value={options.jsonData.path} />
+          <Input onChange={onPathChange} id="url" width={60} value={options.jsonData.path} />
         </InlineField>
         <InlineField
           label="Access"
           labelWidth={12}
-          tooltip={'Direct = url is used directly from browser(DEPRECATED), Proxy = Grafana backend will proxy the request'}
+          tooltip={
+            'Direct = url is used directly from browser(DEPRECATED), Proxy = Grafana backend will proxy the request'
+          }
         >
           <Select
             options={[
@@ -189,12 +191,12 @@ export function ConfigEditor(props: Props) {
         </Card>
         <h3 style={{ marginTop: '1rem' }}>Add a constant</h3>
         <InlineField label="Name" labelWidth={12}>
-          <Input width={119} onChange={onNameConstChange} value={nameConst} />
+          <Input width={119} id="constant_name" onChange={onNameConstChange} value={nameConst} />
         </InlineField>
         <InlineField label="Value" labelWidth={12}>
-          <TextArea cols={100} onChange={onValueConstChange} value={valueConst} />
+          <TextArea cols={100} id="constant_value" onChange={onValueConstChange} value={valueConst} />
         </InlineField>
-        <Button variant="primary" style={{ marginLeft: '7.15rem' }} onClick={addConst}>
+        <Button variant="primary" id="btn_constant" style={{ marginLeft: '7.15rem' }} onClick={addConst}>
           Add
         </Button>
         <h3 style={{ marginTop: '1rem' }}>Constant list</h3>
@@ -214,12 +216,12 @@ export function ConfigEditor(props: Props) {
         </Card>
         <h3 style={{ marginTop: '1rem' }}>Add a macro</h3>
         <InlineField label="Name" labelWidth={12}>
-          <Input width={119} onChange={onNameMacroChange} value={nameMacro} />
+          <Input width={119} id="macro_name" onChange={onNameMacroChange} value={nameMacro} />
         </InlineField>
         <InlineField label="Value" labelWidth={12}>
-          <TextArea cols={100} onChange={onValueMacroChange} value={valueMacro} />
+          <TextArea cols={100} id="macro_value" onChange={onValueMacroChange} value={valueMacro} />
         </InlineField>
-        <Button variant="primary" onClick={addMacro}>
+        <Button variant="primary" id="btn_macro" onClick={addMacro}>
           Add
         </Button>
         <h3 style={{ marginTop: '1rem' }}>Macros list</h3>

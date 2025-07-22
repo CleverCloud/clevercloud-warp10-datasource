@@ -1,0 +1,11 @@
+ARG grafana_version=11.6.2
+FROM grafana/grafana:${grafana_version}
+
+# Inject plugin
+COPY dist /var/lib/grafana/plugins/clevercloud-warp10-datasource
+
+# Inject provisioning files
+COPY tests/config/grafana_volumes/provisioning /etc/grafana/provisioning
+
+# Inject warp10.conf
+COPY tests/config/warp10.conf /opt/warp10/etc/warp10.conf

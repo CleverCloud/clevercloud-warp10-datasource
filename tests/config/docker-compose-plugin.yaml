@@ -1,0 +1,44 @@
+services:
+  grafana:
+    container_name: 'clevercloud-warp10-datasource'
+    build:
+      context: ../../.config
+      args:
+        grafana_version: ${GRAFANA_VERSION:-11.6.2}
+    ports:
+      - 3000:3000
+    volumes:
+      - ../../dist:/var/lib/grafana/plugins/clevercloud-warp10-datasource
+      - ./grafana_volumes/provisioning:/etc/grafana/provisioning
+      - ./warp10.conf:/opt/warp10/etc/warp10.conf
+    depends_on:
+      warp10:
+        condition: service_healthy
+    networks:
+      - warp10-net
+    environment:
+      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=clevercloud-warp10-datasource
+      - WARP10_URL=http://warp10:8080
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:3000/login" ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  warp10:
+    image: warp10io/warp10:3.5.0-alpine
+    container_name: warp10
+    ports:
+      - 8080:8080
+      - 8081:8081
+    networks:
+      - warp10-net
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "-XPOST", "-d", "'RETURN 1'", "http://localhost:8080/api/v0/exec" ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+networks:
+  warp10-net:
+    driver: bridge
