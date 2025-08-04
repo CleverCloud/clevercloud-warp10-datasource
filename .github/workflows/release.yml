@@ -1,5 +1,3 @@
-# This GitHub Action automates the process of building Grafana plugins.
-# (For more information, see https://github.com/grafana/plugin-actions/blob/main/build-plugin/README.md)
 name: Release
 
 on:
@@ -7,20 +5,110 @@ on:
     tags:
       - 'v*' # Run workflow on version tags, e.g. v1.0.0.
 
-permissions: read-all
+permissions:
+  contents: write
 
 jobs:
   release:
-    permissions:
-      contents: write
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # --- Version consistency check
+      - name: Get plugin version
+        id: version
+        run: |
+          PLUGIN_VERSION=$(jq -r '.info.version' src/plugin.json)
+          if [[ ! $PLUGIN_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Invalid version in plugin.json: $PLUGIN_VERSION"
+            exit 1
+          fi
+
+          PKG_VERSION=$(jq -r '.version' package.json)
+          if [[ $PKG_VERSION != $PLUGIN_VERSION ]]; then
+            echo "⚠️ Version mismatch between package.json: ($PKG_VERSION) and plugin.json: ($PLUGIN_VERSION)"
+            exit 1
+          fi
+
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            TAG_VERSION=${GITHUB_REF#refs/tags/v}
+            if [[ $TAG_VERSION != $PLUGIN_VERSION ]]; then
+              echo "❌ Inconsistent versions:"
+              echo "   Tag: $TAG_VERSION"
+              echo "   plugin.json: $PLUGIN_VERSION"
+              exit 1
+            fi
+          fi
+
+          echo "version=$PLUGIN_VERSION" >> $GITHUB_OUTPUT
+          echo "✔️ Valid version $PLUGIN_VERSION"
+
+      - name: Debug git and version state
+        run: |
+          echo "Current HEAD:"; git log -1
+          echo "Tags at HEAD:"; git tag --points-at HEAD
+          echo "plugin.json:"; cat src/plugin.json | grep version
+          echo "package.json:"; cat package.json | grep version
+          echo "GITHUB_REF=$GITHUB_REF"
+
+      # --- Official Grafana plugin build (creates dist/ ZIP and SHA1)
       - uses: grafana/plugin-actions/build-plugin@main
-        # Uncomment to enable plugin signing
-        # (For more info on how to generate the access policy token see https://grafana.com/developers/plugin-tools/publish-a-plugin/sign-a-plugin#generate-an-access-policy-token)
+        # Uncomment below to enable plugin signing
         #with:
-        # Make sure to save the token in your repository secrets
-        #policy_token: $
-        # Usage of GRAFANA_API_KEY is deprecated, prefer `policy_token` option above
-        #grafana_token: $
+        #  policy_token: ${{ secrets.POLICY_TOKEN }}
+
+      # --- (Optional) Build backend binaries or other steps
+      # - uses: magefile/mage-action@v3
+      #   with:
+      #     version: latest
+      #     args: buildAll
+
+      # --- (Optional) Custom packaging if needed
+      # - name: Package artifacts
+      #   run: |
+      #     chmod +x ./scripts/package-plugin.sh
+      #     ./scripts/package-plugin.sh 'dist/gpx_warp10_*' clevercloud-warp10-datasource ${{ steps.version.outputs.version }}
+
+      - name: Move generated zips to dist
+        run: |
+          mkdir -p dist
+          mv *.zip dist/ || true
+          mv *.sha1 dist/ || true
+
+      - name: Show generated files
+        run: ls -al dist/
+
+      - name: Get release metadata
+        id: relmeta
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          DATE=$(date +'%Y-%m-%d')
+          COMMIT=$(git rev-parse --short HEAD)
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "date=$DATE" >> $GITHUB_OUTPUT
+          echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+          echo "commit_msg=$COMMIT_MSG" >> $GITHUB_OUTPUT
+
+      # --- Publish GitHub Release with all ZIPs/SHA1s found in dist/
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: clevercloud-warp10-datasource v${{ steps.relmeta.outputs.version }}
+          body: |
+            [${{ steps.relmeta.outputs.version }}] - ${{ steps.relmeta.outputs.date }}
+            Commit: ${{ steps.relmeta.outputs.commit }}
+            - ${{ steps.relmeta.outputs.commit_msg }}
+            
+            See CHANGELOG.md for details.
+          draft: false
+          files: |
+            dist/clevercloud-warp10-datasource-${{ steps.version.outputs.version }}.*.zip
+            dist/clevercloud-warp10-datasource-${{ steps.version.outputs.version }}.*.zip.sha1
+            # Add other patterns or files if needed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
