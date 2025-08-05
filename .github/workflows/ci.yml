@@ -41,8 +41,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Unit tests
-        run: npm run test:ci
+      #  removed because of the release build by Grafana is affected by the CVE 2025-7783 from the library form-Data in jest-environment-jsdom
+      #      - name: Unit tests
+      #      run: npm run test:ci
 
       - name: Build frontend
         run: |
