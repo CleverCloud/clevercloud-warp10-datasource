@@ -6,11 +6,10 @@ import {
   MetricFindValue,
   MutableDataFrame,
   ScopedVars,
-  TypedVariableModel,
 } from '@grafana/data';
 import { DataSourceWithBackend, FetchResponse, getBackendSrv, getTemplateSrv, TestingStatus } from '@grafana/runtime';
 
-import { catchError, from, lastValueFrom, map, mergeMap, Observable, tap } from 'rxjs';
+import { catchError, from, lastValueFrom, map, mergeMap, Observable } from 'rxjs';
 import { reduce } from 'rxjs/operators';
 
 import {
@@ -35,8 +34,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
 
   private macro: ConstProp[];
 
-  private var: TypedVariableModel[];
-
   private request!: DataQueryRequest<WarpQuery>;
 
   /**
@@ -52,7 +49,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
 
     this.macro = instanceSettings.jsonData.macro ?? [];
 
-    this.var = getTemplateSrv().getVariables();
   }
 
   /**
@@ -60,14 +56,16 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * as expected
    * */
   applyTemplateVariables(query: WarpQuery, _scopedVars: ScopedVars): WarpQuery {
+    let header =  this.computeTimeVars(this.request) +
+      this.addDashboardVariables() +
+      this.computeGrafanaContext() +
+      this.computePanelRepeatVars(_scopedVars);
+
+    let script = header + query.expr;
+
     return {
       ...query,
-      expr:
-        this.computeTimeVars(this.request) +
-        this.addDashboardVariables() +
-        this.computeGrafanaContext() +
-        this.computePanelRepeatVars(_scopedVars) +
-        query.expr,
+      expr: script,
     };
   }
 
@@ -245,35 +243,15 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   }
 
   private computePanelRepeatVars(scopedVars: any): string {
-    let str = '';
-    if (scopedVars) {
-      for (let k in scopedVars) {
-        let v = scopedVars[k];
+    let wsHeader = '';
+    getTemplateSrv()
+      .getVariables()
+      .forEach((myVar) => {
+        const replace = getTemplateSrv().replace(`$${myVar.name}`, scopedVars)
+        wsHeader += ` '${replace}' '${myVar.name}_repeat' STORE\n`;
 
-        if (v.selected || this.scopedVarIsAll(k)) {
-          str += `'${v.value}' '${k}' STORE \n`;
-        }
-      }
-    }
-
-    return str;
-  }
-
-  /**
-   * Test if a named scoped variable is set to all
-   *
-   * @param name string The name of scoped variable
-   * @return bool If the scoped variable is set to all
-   */
-  private scopedVarIsAll(name: string): boolean {
-    for (let i = 0; i < this.var.length; i++) {
-      const v = this.var[i] as any;
-      if (v.name === name && v.current.value.length === 1 && v.current.value[0] === '$__all') {
-        return true;
-      }
-    }
-
-    return false;
+      });
+    return wsHeader;
   }
 
   /**
@@ -432,7 +410,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
           },
         },
       } as unknown as DataQueryRequest<WarpQuery>).pipe(
-        tap((value) => console.log('value in super.request()', value)),
         map((value) => {
           return value?.data.flatMap((frame) => {
             return frame.fields.flatMap((field: any) => {
@@ -474,7 +451,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       );
 
       const res: MetricFindValue[] = await lastValueFrom(query);
-      console.log('2nd method obsvResp res', res);
       return res;
     }
 
@@ -508,10 +484,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
           });
           return entries.concat(tab);
         }, []),
-
-        tap((value) => {
-          console.log('metricFindQuery entries', value);
-        })
       )
     );
   }
