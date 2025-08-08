@@ -9,7 +9,7 @@ import {
 } from '@grafana/data';
 import { DataSourceWithBackend, FetchResponse, getBackendSrv, getTemplateSrv, TestingStatus } from '@grafana/runtime';
 
-import { catchError, from, lastValueFrom, map, mergeMap, Observable, tap } from 'rxjs';
+import { catchError, from, lastValueFrom, map, mergeMap, Observable } from 'rxjs';
 import { reduce } from 'rxjs/operators';
 
 import {
@@ -60,8 +60,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       this.addDashboardVariables() +
       this.computeGrafanaContext() +
       this.computePanelRepeatVars(_scopedVars);
-
-    console.log("scoped", _scopedVars);
 
     let script = header + query.expr;
 
@@ -250,7 +248,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       .getVariables()
       .forEach((myVar) => {
         const replace = getTemplateSrv().replace(`$${myVar.name}`, scopedVars)
-        console.log("replace", replace);
         wsHeader += ` '${replace}' '${myVar.name}_repeat' STORE\n`;
 
       });
@@ -413,7 +410,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
           },
         },
       } as unknown as DataQueryRequest<WarpQuery>).pipe(
-        tap((value) => console.log('value in super.request()', value)),
         map((value) => {
           return value?.data.flatMap((frame) => {
             return frame.fields.flatMap((field: any) => {
@@ -455,7 +451,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       );
 
       const res: MetricFindValue[] = await lastValueFrom(query);
-      console.log('2nd method obsvResp res', res);
       return res;
     }
 
@@ -489,10 +484,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
           });
           return entries.concat(tab);
         }, []),
-
-        tap((value) => {
-          console.log('metricFindQuery entries', value);
-        })
       )
     );
   }
