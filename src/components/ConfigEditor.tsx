@@ -22,7 +22,7 @@ export function ConfigEditor(props: Props) {
       ...options.jsonData,
       path: event.target.value,
     };
-    onOptionsChange({ ...options, jsonData });
+    onOptionsChange({ ...options, jsonData, url: event.target.value });
   };
 
   // Modification select access
