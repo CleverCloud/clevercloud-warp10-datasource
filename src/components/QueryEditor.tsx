@@ -3,7 +3,7 @@ import { QueryEditorProps } from '@grafana/data';
 import { DataSource } from '../datasource';
 import { WarpDataSourceOptions, WarpQuery } from '../types/types';
 import { debounceTime, tap, Subject } from 'rxjs';
-import { TextArea } from '@grafana/ui';
+import { TextArea, Button } from '@grafana/ui';
 
 type Props = QueryEditorProps<DataSource, WarpQuery, WarpDataSourceOptions>;
 
@@ -52,9 +52,23 @@ export function QueryEditor({ query, onChange, onRunQuery }: Props) {
     subject.next(event.target.value);
   };
 
+  const handleRunQueryShortcut = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.ctrlKey && event.key === 'Enter') {
+      event.preventDefault();
+      onRunQuery();
+    }
+  };
+
   return (
-    <div className="gf-form" style={{ border: 'solid 1px #2e3136' }}>
-      <TextArea rows={nbrLinesText(expr)} value={expr} onChange={onExprChange} />
+    <div className="gf-form" style={{  display: 'flex', flexDirection: 'column' }}>
+      <TextArea rows={nbrLinesText(expr)} value={expr} onChange={onExprChange} onKeyDown={handleRunQueryShortcut} placeholder="Enter your query here (CTRL+ENTER to run)" />
+      <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+
+        {/* disabled if expr is empty */}
+        <Button variant="primary" style={{ }} onClick={onRunQuery} disabled={(expr ?? '').trim() === ''}>
+          Run query
+        </Button>
+      </div>
     </div>
   );
 }
