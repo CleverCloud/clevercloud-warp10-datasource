@@ -6,7 +6,6 @@ import {
   MetricFindValue,
   MutableDataFrame,
   ScopedVars,
-  TypedVariableModel,
 } from '@grafana/data';
 import { DataSourceWithBackend, FetchResponse, getBackendSrv, getTemplateSrv, TestingStatus } from '@grafana/runtime';
 
@@ -35,8 +34,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
 
   private macro: ConstProp[];
 
-  private var: TypedVariableModel[];
-
   private request!: DataQueryRequest<WarpQuery>;
 
   /**
@@ -52,7 +49,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
 
     this.macro = instanceSettings.jsonData.macro ?? [];
 
-    this.var = getTemplateSrv().getVariables();
   }
 
   /**
@@ -60,14 +56,18 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * as expected
    * */
   applyTemplateVariables(query: WarpQuery, _scopedVars: ScopedVars): WarpQuery {
+    let header =  this.computeTimeVars(this.request) +
+      this.addDashboardVariables() +
+      this.computeGrafanaContext() +
+      this.computePanelRepeatVars(_scopedVars);
+
+    console.log("scoped", _scopedVars);
+
+    let script = header + query.expr;
+
     return {
       ...query,
-      expr:
-        this.computeTimeVars(this.request) +
-        this.addDashboardVariables() +
-        this.computeGrafanaContext() +
-        this.computePanelRepeatVars(_scopedVars) +
-        query.expr,
+      expr: script,
     };
   }
 
@@ -245,35 +245,16 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   }
 
   private computePanelRepeatVars(scopedVars: any): string {
-    let str = '';
-    if (scopedVars) {
-      for (let k in scopedVars) {
-        let v = scopedVars[k];
+    let wsHeader = '';
+    getTemplateSrv()
+      .getVariables()
+      .forEach((myVar) => {
+        const replace = getTemplateSrv().replace(`$${myVar.name}`, scopedVars)
+        console.log("replace", replace);
+        wsHeader += ` '${replace}' '${myVar.name}_repeat' STORE\n`;
 
-        if (v.selected || this.scopedVarIsAll(k)) {
-          str += `'${v.value}' '${k}' STORE \n`;
-        }
-      }
-    }
-
-    return str;
-  }
-
-  /**
-   * Test if a named scoped variable is set to all
-   *
-   * @param name string The name of scoped variable
-   * @return bool If the scoped variable is set to all
-   */
-  private scopedVarIsAll(name: string): boolean {
-    for (let i = 0; i < this.var.length; i++) {
-      const v = this.var[i] as any;
-      if (v.name === name && v.current.value.length === 1 && v.current.value[0] === '$__all') {
-        return true;
-      }
-    }
-
-    return false;
+      });
+    return wsHeader;
   }
 
   /**
