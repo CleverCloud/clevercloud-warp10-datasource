@@ -1,0 +1,254 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 2,
+      "panels": [],
+      "title": "serie_1",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "uid": "P62DF7D107A4865DF"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^scalar_value_string$/",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.3",
+      "repeat": "var_serie_1",
+      "repeatDirection": "h",
+      "targets": [
+        {
+          "expr": "$var_serie_1_repeat",
+          "refId": "A"
+        }
+      ],
+      "title": "$var_serie_1",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      },
+      "id": 3,
+      "panels": [],
+      "title": "serie_2",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "clevercloud-warp10-datasource",
+        "uid": "P62DF7D107A4865DF"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^scalar_value_string$/",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.6.3",
+      "repeat": "var_serie_2",
+      "repeatDirection": "h",
+      "targets": [
+        {
+          "expr": "$var_serie_2_repeat",
+          "refId": "A"
+        }
+      ],
+      "title": "$var_serie_2",
+      "type": "stat"
+    }
+  ],
+  "preload": false,
+  "schemaVersion": 41,
+  "tags": [],
+  "templating": {
+    "list": [
+      {
+        "allowCustomValue": false,
+        "current": {
+          "text": [
+            "serie_1__value_A",
+            "serie_1__value_B"
+          ],
+          "value": [
+            "serie_1__value_A",
+            "serie_1__value_B"
+          ]
+        },
+        "includeAll": true,
+        "multi": true,
+        "name": "var_serie_1",
+        "options": [
+          {
+            "selected": true,
+            "text": "serie_1__value_A",
+            "value": "serie_1__value_A"
+          },
+          {
+            "selected": true,
+            "text": "serie_1__value_B",
+            "value": "serie_1__value_B"
+          },
+          {
+            "selected": false,
+            "text": "serie_1__value_C",
+            "value": "serie_1__value_C"
+          }
+        ],
+        "query": "serie_1__value_A, serie_1__value_B, serie_1__value_C",
+        "type": "custom"
+      },
+      {
+        "allowCustomValue": false,
+        "current": {
+          "text": [
+            "serie_2__value_A",
+            "serie_2__value_B"
+          ],
+          "value": [
+            "serie_2__value_A",
+            "serie_2__value_B"
+          ]
+        },
+        "description": "",
+        "includeAll": true,
+        "multi": true,
+        "name": "var_serie_2",
+        "options": [
+          {
+            "selected": true,
+            "text": "serie_2__value_A",
+            "value": "serie_2__value_A"
+          },
+          {
+            "selected": true,
+            "text": "serie_2__value_B",
+            "value": "serie_2__value_B"
+          }
+        ],
+        "query": "serie_2__value_A, serie_2__value_B",
+        "type": "custom"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Test repeated vars",
+  "version": 1
+}

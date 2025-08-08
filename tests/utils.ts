@@ -928,11 +928,11 @@ export async function createDashboardAndRunQuery(
   return returnResponse && response ? await response.json() : undefined;
 }
 
-export async function goToNewDashboard(page: Page) {
-  const directNewDashboard = page.locator('a[href*="/new-dashboard"]', { hasText: 'New dashboard' });
-  if ((await directNewDashboard.count()) > 0 && (await directNewDashboard.first().isVisible())) {
-    await directNewDashboard.first().click();
-    console.log('Clicked direct "New dashboard" link.');
+export async function goToDashboard(page: Page, dashboardName: string) {
+  const directDashboard = page.getByRole('link', { name: dashboardName });
+  if ((await directDashboard.count()) > 0 && (await directDashboard.first().isVisible())) {
+    await directDashboard.first().click();
+    console.log('Clicked direct "${dashboardName}" link.');
     return;
   }
 
@@ -941,15 +941,19 @@ export async function goToNewDashboard(page: Page) {
     await generalLink.first().click();
     console.log('Clicked "General" section.');
 
-    const nestedNewDashboard = page.getByText('New dashboard', { exact: true });
-    if ((await nestedNewDashboard.count()) > 0 && (await nestedNewDashboard.first().isVisible())) {
-      await nestedNewDashboard.first().click();
-      console.log('Clicked nested "New dashboard".');
+    const nestedDashboard = page.getByText(dashboardName, { exact: true });
+    if ((await nestedDashboard.count()) > 0 && (await nestedDashboard.first().isVisible())) {
+      await nestedDashboard.first().click();
+      console.log('Clicked nested "${dashboardName}".');
       return;
     }
   }
 
-  throw new Error('Neither "New dashboard" nor "General > New dashboard" was found.');
+  throw new Error(`Neither "${dashboardName}" nor "General > ${dashboardName}" was found.`);
+}
+
+export async function goToNewDashboard(page: Page) {
+  goToDashboard(page, "New dashboard");
 }
 
 export async function createNewPanel(page: Page, panelTitle = 'Test Editor JSON', panelQuery = '1 2 +') {
