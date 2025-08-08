@@ -24,7 +24,7 @@ export function QueryEditor({ query, onChange, onRunQuery }: Props) {
   if (!expr && expr !== '') {
     console.warn('Deprecate request detected');
     // @ts-ignore
-    expr = query.queryText;
+    expr = query.queryText ?? '';
   }
 
   //operations changes
@@ -39,7 +39,12 @@ export function QueryEditor({ query, onChange, onRunQuery }: Props) {
   );
 
   useEffect(() => {
-    let subscription = onChangeObservable.subscribe(() => onRunQuery());
+    let subscription = onChangeObservable.subscribe((value) => {
+      // check if the warpscript is empty
+      if ((value ?? '').trim() !== '') {
+        onRunQuery();
+      }
+    });
     return () => subscription.unsubscribe();
   }, [onChangeObservable, onRunQuery]);
 

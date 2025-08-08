@@ -114,7 +114,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       if (!t.expr && t.expr !== '') {
         console.warn('Deprecate request detected');
         // @ts-ignore
-        t.expr = t.queryText;
+        t.expr = t.queryText ?? '';
       }
       return t;
     });
