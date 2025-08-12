@@ -1,6 +1,6 @@
 import React, { ChangeEvent, useState } from 'react';
-import { ActionMeta, Button, Card, IconButton, InlineField, Input, Select, TextArea } from '@grafana/ui';
-import { DataSourcePluginOptionsEditorProps, SelectableValue } from '@grafana/data';
+import { Button, Card, IconButton, InlineField, Input, TextArea } from '@grafana/ui';
+import { DataSourcePluginOptionsEditorProps,  } from '@grafana/data';
 import { ConstProp, WarpDataSourceOptions } from '../types/types';
 
 interface Props extends DataSourcePluginOptionsEditorProps<WarpDataSourceOptions> {}
@@ -25,16 +25,6 @@ export function ConfigEditor(props: Props) {
     onOptionsChange({ ...options, jsonData });
   };
 
-  // Modification select access
-  const onAccessChange = (value: SelectableValue<string>, _actionMeta: ActionMeta) => {
-    const valueAccess: 'direct' | 'proxy' = value.value === 'direct' ? 'direct' : 'proxy';
-
-    const updatedOptions = {
-      ...options,
-      access: valueAccess,
-    };
-    onOptionsChange(updatedOptions);
-  };
 
   //Modification input name of the new constant
   const onNameConstChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -161,20 +151,9 @@ export function ConfigEditor(props: Props) {
         <InlineField
           label="Access"
           labelWidth={12}
-          tooltip={
-            'Direct = url is used directly from browser(DEPRECATED), Proxy = Grafana backend will proxy the request'
-          }
+          tooltip={'Proxy = Grafana backend will proxy the request'}
         >
-          <Select
-            options={[
-              { value: 'direct', label: 'direct (DEPRECATED)' },
-              { value: 'proxy', label: 'proxy' },
-            ]}
-            value={options.access === 'direct' ? 'direct' : 'proxy'}
-            onChange={onAccessChange}
-            width={60}
-            id={'select'}
-          />
+          <span style={{ opacity: 0.8 }}>proxy</span>
         </InlineField>
       </div>
       <div style={{ marginTop: '3rem' }}>
