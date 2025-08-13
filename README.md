@@ -153,6 +153,18 @@ FLATTEN
 UNIQUE
 ```
 
+### Repeated variables features
+
+This plugin support repeated variables. To use a repeated variable in your warpscript add the prefix `_repeat` to your variable name.
+
+Example for the variable `my_variable`:
+
+```warpscript
+$my_variable_repeat
+```
+
+If the panel is repeated, it will define this variable by its current value. 
+
 ### Templating variable evaluation
 
 To understand the variable resolution, this is how a query is built
