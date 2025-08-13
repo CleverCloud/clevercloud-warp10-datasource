@@ -1242,8 +1242,11 @@ export async function testDatasourceInvalidURL(
   } else {
     await page.getByTestId(saveButton.name).click();
   }
-  const alertSelector = page.locator('[data-testid="data-testid Alert info"]');
-  await expect(alertSelector).toBeVisible({ timeout: 3000 });
-  const alertText = await alertSelector.textContent();
-  expect(alertText).toContain('connect: connection refused');
+  await page.waitForTimeout(1000);
+  const alert = page
+    .locator('[data-testid="data-testid Alert info"], [data-testid="data-testid Alert error"]')
+    .filter({ hasText: /connect: connection refused/i })
+    .first();
+
+  await expect(alert).toBeVisible({ timeout: 3000 });
 }

@@ -75,7 +75,7 @@ warp.token.mytoken = {
 #### `const_variable_test.spec.ts`  (Constant Variable Functionality)
 #### `interval_variable_test.spec.ts` (Interval Variable Functionality)
 #### `query_variable_test.spec.ts` (Query Variable Functionality)
-#### `healthCheck_test.spec.ts` (Datasource Healthcheck/Access Mode)
+#### `healthCheck_test.spec.ts` (Datasource Healthcheck)
 #### `custom_multi_variable_test.spec.ts` (Custom Multi-Value Variable Functionality) 
 #### `editor_json_model_test.spec.ts` (Editor JSON Model Verification)
 
@@ -168,7 +168,7 @@ Each step includes explicit verification to ensure correct and robust implementa
 ## Datasource Component: Warp10 Datasource Configuration and Healthcheck
 
 This test validates the configuration interface for the Warp10 datasource in Grafana.  
-It covers input validation, dynamic `access` mode behavior (`proxy` vs `direct`), positive/negative feedback for configuration, health check integration with the Warp10 backend, and data persistence for the Warp10 datasource setup.  
+It covers input validation, positive/negative feedback for configuration, health check integration with the Warp10 backend, and data persistence for the Warp10 datasource setup.  
 Every step includes explicit checks for field handling, healthcheck responses, user feedback, and form persistence.
 
 ### Steps
@@ -186,10 +186,6 @@ Every step includes explicit checks for field handling, healthcheck responses, u
    - Test with:
       - An **invalid URL** → confirm error is shown.
       - A **valid URL** → confirm success message is returned.
-   - Change the `access` field to:
-      - **`direct`** mode → expect a delay and likely CORS-related failure (validated by alert or timeout).
-      - **`proxy`** mode → expect health check to pass.
-   - Confirm the effect of access mode change is correctly reflected in the behavior.
 
 3. **Health Check Endpoint Validation**
    - Confirm that the datasource component makes a health check call against `/api/v0/version` (through `/health` endpoint).
@@ -459,7 +455,7 @@ It ensures values are serialized as arrays in the backend payload, the variable 
 
 ## Datasource Healthcheck Scenario: Warp10 Datasource Health Validation
 
-This scenario verifies the **healthcheck behavior** of the Warp10 datasource in Grafana, both in `proxy` and `direct (deprecated)` access modes.  
+This scenario verifies the **healthcheck behavior** of the Warp10 datasource in Grafana. 
 It confirms that status feedback is accurate and errors are correctly propagated for different connectivity situations.
 
 ### Steps
@@ -468,15 +464,7 @@ It confirms that status feedback is accurate and errors are correctly propagated
    - Create a new Warp10 datasource and save in **proxy** mode.
    - Validate that a successful health check is reported.
 
-2. **Switch to Direct Mode**
-   - Change the datasource access mode to **direct (DEPRECATED)**.
-   - Save again and verify that errors (connection refused, CORS, etc.) are surfaced in the UI.
-
-3. **Switch Back to Proxy Mode**
-   - Change the datasource back to **proxy** mode.
-   - Confirm that the health check again passes and a working status is shown.
-
-4. **Cleanup**
+2. **Cleanup**
    - Delete the test datasource and confirm its removal.
 
 ---

@@ -2,33 +2,25 @@ import {
   DataQueryRequest,
   DataQueryResponse,
   DataSourceInstanceSettings,
-  FieldType,
   MetricFindValue,
-  MutableDataFrame,
   ScopedVars,
 } from '@grafana/data';
-import { DataSourceWithBackend, FetchResponse, getBackendSrv, getTemplateSrv, TestingStatus } from '@grafana/runtime';
+import { DataSourceWithBackend, getBackendSrv, getTemplateSrv } from '@grafana/runtime';
 
-import { catchError, from, lastValueFrom, map, mergeMap, Observable } from 'rxjs';
-import { reduce } from 'rxjs/operators';
+import { lastValueFrom, map, Observable } from 'rxjs';
 
 import {
   ConstProp,
-  WarpDataResult,
   WarpDataSourceOptions,
   WarpQuery,
   WarpResult,
-  WarpVariableResult,
 } from './types/types';
 
 import { isArray, isObject } from 'lodash';
-import { Table } from './types/table';
 
 export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceOptions> {
   //Information database
   private path: string;
-
-  private access: 'direct' | 'proxy';
 
   private const: ConstProp[];
 
@@ -42,8 +34,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
   constructor(instanceSettings: DataSourceInstanceSettings<WarpDataSourceOptions>) {
     super(instanceSettings);
     this.path = instanceSettings.jsonData.path ?? '';
-
-    this.access = instanceSettings.access ?? 'proxy';
 
     this.const = instanceSettings.jsonData.const ?? [];
 
@@ -69,42 +59,6 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     };
   }
 
-  /**
-   * used by datasource configuration page to make sure the connection is working
-   * @return {Promise<any>} Response
-   */
-  async testDatasource(): Promise<any> {
-    return this.access === 'direct' ? this.checkHealth() : super.callHealthCheck();
-  }
-
-  async checkHealth(): Promise<any> {
-    let message = '';
-    let status = '';
-
-    const query = lastValueFrom(this.doRequest({ refId: '', expr: '1 2 +', hideLabels: true}));
-
-    await query
-      .then((value) => {
-        if (value.status === 200) {
-          message = 'Datasource is working';
-          status = 'Ok';
-        } else {
-          message = 'An error has occurred';
-          status = 'Error';
-        }
-      })
-      .catch(() => {
-        message = 'An error has occurred';
-        status = 'Error';
-      });
-
-    return {
-      message: message,
-      details: undefined,
-      status: status,
-    } as TestingStatus;
-  }
-
   query(request: DataQueryRequest<WarpQuery>): Observable<DataQueryResponse> {
     // Fix to make the change progressive in Grafana
     // Previous version of these plugin as already be deployed
@@ -122,108 +76,15 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     this.request = request;
 
     // apply headers for proxy mode
-    if (this.access === 'proxy') {
-      const query: WarpQuery = {
-        expr: request.targets[0].expr,
-        refId: request.targets[0].refId,
-        hideLabels: request.targets[0]?.hideLabels ? request.targets[0]?.hideLabels : false,
-      };
-      request.targets[0] = this.applyTemplateVariables(query, request.scopedVars);
-    }
+    const query: WarpQuery = {
+      expr: request.targets[0].expr,
+      refId: request.targets[0].refId,
+      hideLabels: request.targets[0]?.hideLabels ? request.targets[0]?.hideLabels : false,
+    };
+    request.targets[0] = this.applyTemplateVariables(query, request.scopedVars);
 
-    return this.access === 'direct' ? this.queryDirect(request) : super.query(request);
+    return super.query(request);
   }
-
-  queryDirect(request: DataQueryRequest<WarpQuery>): Observable<DataQueryResponse> {
-    const observableQueries = from(request.targets);
-
-    return observableQueries.pipe(
-      //replacing constants
-      map((query) => this.applyTemplateVariables(query, request.scopedVars) as WarpQuery),
-
-      //doing query
-      mergeMap((query) => {
-        return this.doRequest(query);
-      }),
-
-      //creating dataframe
-      map((response: FetchResponse<WarpResult>): DataQueryResponse => {
-        // is it for a Table graph ?
-        if (response.data.length === 1 && response.data[0] && Table.isTable(response.data[0])) {
-          const d: Table = response.data[0] as unknown as Table;
-          return {
-            data: this.createDataFrameFromTable(d),
-          };
-        }
-
-        const refId: string = (request.targets[0] || {}).refId ?? '';
-        let dataFrames: MutableDataFrame[] = [];
-        response.data.map((elt) => {
-          if (isArray(elt)) {
-            dataFrames = [...dataFrames, ...elt.map((d: WarpDataResult) => this.createDataFrame(refId, d))];
-          } else {
-            dataFrames = [...dataFrames, this.createDataFrame(refId, elt)];
-          }
-        });
-
-        return {
-          data: dataFrames,
-        };
-      }),
-      catchError((error, _) => {
-        console.log('error', error);
-        throw error;
-      })
-    );
-  }
-
-  createDataFrameFromTable(d: Table) {
-    return [
-      new MutableDataFrame({
-        // @ts-ignore : should return this kind of object to be compatible to ovh plugin
-        fields: d.columns.map((c, index) => {
-          let obj = {
-            name: c.text,
-            config: {},
-            type: c.type,
-            values: d.rows.map((r) => r[index]),
-          };
-
-          if (c.sort && c.desc) {
-            obj = {
-              ...obj,
-              config: {
-                sort: c.sort,
-                desc: c.desc,
-              },
-            };
-          }
-
-          return obj;
-        }),
-      }),
-    ];
-  }
-
-  createDataFrame(refId: string, d: WarpDataResult): MutableDataFrame {
-    return new MutableDataFrame({
-      refId: refId,
-      name: d.c || '',
-      fields: [
-        {
-          name: 'Time',
-          type: FieldType.time,
-          values: d.v.map((point) => point[0] / 1000),
-        },
-        {
-          name: 'Value',
-          type: FieldType.number || FieldType.string,
-          values: d.v.map((point) => point[point.length - 1]),
-        },
-      ],
-    });
-  }
-
   /**
    * send request to Warp10
    * @param query
@@ -397,94 +258,57 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       hideLabels: false,
     };
 
-    if (this.access === 'proxy') {
-      const query = this.query({
-        targets: [warpQuery],
-        scopedVars: {},
-        range: {
+    const result$ = this.query({
+      targets: [warpQuery],
+      scopedVars: {},
+      range: {
+        from: new Date(),
+        to: new Date(Date.now() + 3600 * 1000),
+        raw: {
           from: new Date(),
           to: new Date(Date.now() + 3600 * 1000),
-          raw: {
-            from: new Date(),
-            to: new Date(Date.now() + 3600 * 1000),
-          },
         },
-      } as unknown as DataQueryRequest<WarpQuery>).pipe(
-        map((value) => {
-          return value?.data.flatMap((frame) => {
-            return frame.fields.flatMap((field: any) => {
-              if (field.values) {
-                const elt = field.values;
+      },
+    } as unknown as DataQueryRequest<WarpQuery>).pipe(
+      map((value) => {
+        return value?.data.flatMap((frame) => {
+          return frame.fields.flatMap((field: any) => {
+            if (field.values) {
+              const elt = field.values;
 
-                if (field.name.includes('array_value')) {
-                  // simple array response, defined in backend
-                  // (we cannot differentiate variable query from panels' requests)
-                  if (elt.buffer !== undefined) {
-                    return elt.buffer.map((v: any) => ({ text: v }));
-                  } else {
-                    return elt.map((v: any) => ({ text: v }));
-                  }
-                } else if (isArray(elt)) {
-                  return elt.map((v) => ({
-                    text: v.toString(),
-                    value: v.toString(),
-                  }));
-                } else if (isObject(elt)) {
-                  return Object.entries(elt).map(([key, value]) => ({
-                    text: key.toString(),
-                    value: value.toString(),
-                  }));
+              if (field.name.includes('array_value')) {
+                // simple array response, defined in backend
+                // (we cannot differentiate variable query from panels' requests)
+                if (elt.buffer !== undefined) {
+                  return elt.buffer.map((v: any) => ({ text: v }));
                 } else {
-                  return [
-                    {
-                      text: elt.toString(),
-                      value: elt.toString(),
-                    },
-                  ];
+                  return elt.map((v: any) => ({ text: v }));
                 }
+              } else if (isArray(elt)) {
+                return elt.map((v) => ({
+                  text: v.toString(),
+                  value: v.toString(),
+                }));
+              } else if (isObject(elt)) {
+                return Object.entries(elt).map(([key, value]) => ({
+                  text: key.toString(),
+                  value: value.toString(),
+                }));
               } else {
-                return [];
+                return [
+                  {
+                    text: elt.toString(),
+                    value: elt.toString(),
+                  },
+                ];
               }
-            });
-          });
-        })
-      );
-
-      const res: MetricFindValue[] = await lastValueFrom(query);
-      return res;
-    }
-
-    // Grafana can handle different text/value for the variable drop list. User has three possibilites in the WarpScript result:
-    // 1 - let a list on the stack : text = value for each entry.
-    // 2 - let a map on the stack : text = map key, value = map value. value will be used in the WarpScript variable.
-    // 3 - let some strings or numbers on the stack : it will be considered as a list, refer to case 1.
-    // Values could be strings or number, ignore other objects.
-    return lastValueFrom(
-      this.doRequest<WarpVariableResult[]>(warpQuery).pipe(
-        reduce<FetchResponse<WarpVariableResult[]>, MetricFindValue[]>((entries, res) => {
-          let tab: MetricFindValue[] = res.data.flatMap((elt) => {
-            if (isArray(elt)) {
-              return elt.map((v) => ({
-                text: v.toString(),
-                value: v.toString(),
-              }));
-            } else if (isObject(elt)) {
-              return Object.entries(elt).map(([key, value]) => ({
-                text: key.toString(),
-                value: value.toString(),
-              }));
             } else {
-              return [
-                {
-                  text: elt.toString(),
-                  value: elt.toString(),
-                },
-              ];
+              return [];
             }
           });
-          return entries.concat(tab);
-        }, []),
-      )
+        });
+      })
     );
+    return await lastValueFrom(result$);
   }
 }

@@ -6,7 +6,7 @@
  *
  * Scope: datasource (configuration UI + backend health)
  */
-import { test, expect } from '@playwright/test';
+import { test } from '@playwright/test';
 import { log, getGrafanaVersion, fillPairAndClickAdd, logVisibility, testDatasourceInvalidURL } from '../utils';
 
 // Datasource component and health check
@@ -91,54 +91,6 @@ test('Datasource: test all fields in datasource config + healthcheck', async ({ 
     log(`--> Health check passed with status: ${healthResponse.status} — ${healthResponse.message}`);
   } else {
     log('--> Health check response was not received.');
-  }
-
-  log('--> Selecting access mode: direct');
-  log('--> Opening access mode dropdown...');
-  await page.locator('#select').click();
-
-  log('--> Selecting "direct (DEPRECATED)" from dropdown...');
-  await page.getByText('direct (DEPRECATED)', { exact: true }).click();
-  await page.waitForTimeout(500);
-
-  log('--> Saving datasource with access=direct (expect possible failure)...');
-  await page.getByRole('button', { name: saveButton.name }).click();
-
-  let alertTextDirect = '';
-  try {
-    const alert = page.locator('[data-testid="data-testid Alert info"]');
-    await expect(alert).toBeVisible({ timeout: 5000 });
-    alertTextDirect = (await alert.textContent())?.trim() || '';
-    log(`--> Access=direct: alert shown: "${alertTextDirect}"`);
-  } catch {
-    log('--> No alert shown within 5s for access=direct');
-  }
-
-  if (alertTextDirect.toLowerCase().includes('error') || alertTextDirect.toLowerCase().includes('refused')) {
-    log('--> Health check correctly failed with access=direct');
-  } else {
-    log('--> Access=direct did not fail');
-  }
-
-  log('--> Switching access mode back to proxy...');
-  await page.locator('#select').click();
-  await page.getByText('proxy', { exact: true }).click();
-
-  await page.waitForTimeout(500);
-
-  log('--> Saving datasource again (access=proxy)...');
-  await page.getByRole('button', { name: saveButton.name }).click();
-  await page.waitForTimeout(1000);
-
-  try {
-    const alert = page.locator('[data-testid="data-testid Alert success"]');
-    await expect(alert).toBeVisible({ timeout: 3000 });
-    const alertTextProxy = (await alert.textContent())?.trim() || '';
-    log(`--> Access=proxy: alert shown: "${alertTextProxy}"`);
-    expect(alertTextProxy.toLowerCase()).toContain('working');
-  } catch {
-    log('--> Expected success alert not shown after switching to proxy');
-    throw new Error('Expected success alert for access=proxy');
   }
 
   // Test constants/macros addition
