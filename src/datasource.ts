@@ -126,7 +126,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       const query: WarpQuery = {
         expr: request.targets[0].expr,
         refId: request.targets[0].refId,
-        hideLabels: request.targets[0]?.hideLabels ? request.targets[0]?.hideLabels : false,
+        hideLabels: request.targets[0]?.hideLabels ?? request.targets[0]?.hideLabels,
       };
       request.targets[0] = this.applyTemplateVariables(query, request.scopedVars);
     }

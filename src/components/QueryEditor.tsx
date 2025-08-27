@@ -3,7 +3,7 @@ import { QueryEditorProps } from '@grafana/data';
 import { DataSource } from '../datasource';
 import { WarpDataSourceOptions, WarpQuery } from '../types/types';
 import { debounceTime, tap, Subject } from 'rxjs';
-import { TextArea, Button } from '@grafana/ui';
+import { TextArea, Button, Checkbox } from '@grafana/ui';
 
 type Props = QueryEditorProps<DataSource, WarpQuery, WarpDataSourceOptions>;
 
@@ -16,7 +16,7 @@ function nbrLinesText(text: string | undefined) {
 }
 
 export function QueryEditor({ query, onChange, onRunQuery }: Props) {
-  let { expr } = query;
+  let { expr, hideLabels } = query;
 
   // fix to make progressive change in Grafana
   // Previous version of these plugin as already be deployed
@@ -59,10 +59,19 @@ export function QueryEditor({ query, onChange, onRunQuery }: Props) {
     }
   };
 
+  const onHideLabelsChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    onChange({ ...query, hideLabels: event.currentTarget.checked });
+  };
+
   return (
     <div className="gf-form" style={{  display: 'flex', flexDirection: 'column' }}>
       <TextArea rows={nbrLinesText(expr)} value={expr} onChange={onExprChange} onKeyDown={handleRunQueryShortcut} placeholder="Enter your query here (CTRL+ENTER to run)" />
-      <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+      <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+        <Checkbox 
+          label="Hide labels" 
+          value={hideLabels ?? false} 
+          onChange={onHideLabelsChange}
+        />
 
         {/* disabled if expr is empty */}
         <Button variant="primary" style={{ }} onClick={onRunQuery} disabled={(expr ?? '').trim() === ''}>
