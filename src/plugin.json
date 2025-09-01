@@ -32,11 +32,11 @@
         "path": "img/screenshots/dashboard_2.png"
       }
     ],
-    "version": "0.1.44",
-    "updated": "2025-01-21"
+    "version": "0.1.45",
+    "updated": "2025-09-01"
   },
   "dependencies": {
-    "grafanaDependency": "<=11.6.1 >=10.0.0",
+    "grafanaDependency": "<11.6.4 >=10.0.0",
     "plugins": []
   }
 }
