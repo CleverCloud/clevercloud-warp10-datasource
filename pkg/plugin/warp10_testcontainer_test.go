@@ -25,17 +25,17 @@ func TestMain(m *testing.M) {
 	req := testcontainers.ContainerRequest{
 		Image:        "warp10io/warp10:3.4.1-alpine",
 		ExposedPorts: []string{"8080/tcp", "8081/tcp"},
-        WaitingFor: wait.ForHTTP("/api/v0/exec").
-              WithStartupTimeout(60 * time.Second).
-              WithPort("8080/tcp"),
-              }
+		WaitingFor: wait.ForHTTP("/api/v0/exec").
+			WithStartupTimeout(60 * time.Second).
+			WithPort("8080/tcp"),
+	}
 	warpContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: req,
 		Started:          true,
 	})
 
 	if err != nil {
-		log.Fatalf(err.Error())
+		log.Fatalf("%s", err.Error())
 	}
 
 	logger := l.New()
@@ -145,7 +145,7 @@ func TestGTSListQuery(t *testing.T) {
 	}
 
 	if !bytes.Equal([]byte(responseShouldBe), jsonResponse) {
-		t.Errorf(fmt.Sprintf("Response does not match expected output. JSON response is '%s'", jsonResponse))
+		t.Errorf("Response does not match expected output. JSON response is '%s'", jsonResponse)
 	}
 }
 

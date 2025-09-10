@@ -3,7 +3,6 @@ package plugin
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	b "github.com/miton18/go-warp10/base"
 	"testing"
@@ -344,15 +343,14 @@ func TestNameWithLabels(t *testing.T) {
 
 	var gts = b.GTS{}
 	if err := json.Unmarshal([]byte(gtsList), &gts); err != nil {
-		var errStr = fmt.Sprintf("json unmarshal: %v, gtslist %v", err.Error(), gtsList)
-		t.Errorf(errStr)
+		t.Errorf("json unmarshal: %v, gtslist %v", err.Error(), gtsList)
 	}
 
 	fullName := nameWithLabels(gts)
 
 	expectedFullName := "testClass{key1=value1,key2=value2}"
 	if fullName != expectedFullName {
-		t.Errorf(fmt.Sprintf("Wrong gts name. Expected %s got %s", expectedFullName, fullName))
+		t.Errorf("Wrong gts name. Expected %s got %s", expectedFullName, fullName)
 	}
 }
 
@@ -370,15 +368,14 @@ func TestNameWithLabelsEmpty(t *testing.T) {
 
 	var gts = b.GTS{}
 	if err := json.Unmarshal([]byte(gtsList), &gts); err != nil {
-		var errStr = fmt.Sprintf("json unmarshal: %v, gtslist %v", err.Error(), gtsList)
-		t.Errorf(errStr)
+		t.Errorf("json unmarshal: %v, gtslist %v", err.Error(), gtsList)
 	}
 
 	fullName := nameWithLabels(gts)
 
 	expectedFullName := "testClass{}"
 	if fullName != expectedFullName {
-		t.Errorf(fmt.Sprintf("Wrong gts name. Expected %s got %s", expectedFullName, fullName))
+		t.Errorf("Wrong gts name. Expected %s got %s", expectedFullName, fullName)
 	}
 }
 
@@ -401,14 +398,13 @@ func TestNameWithLabelsInOrder(t *testing.T) {
 
 	var gts = b.GTS{}
 	if err := json.Unmarshal([]byte(gtsList), &gts); err != nil {
-		var errStr = fmt.Sprintf("json unmarshal: %v, gtslist %v", err.Error(), gtsList)
-		t.Errorf(errStr)
+		t.Errorf("json unmarshal: %v, gtslist %v", err.Error(), gtsList)
 	}
 
 	fullName := nameWithLabels(gts)
 
 	expectedFullName := "testClass{.aKey=aValue,aKey=aValue,bKey=bValue,cKey=cValue}"
 	if fullName != expectedFullName {
-		t.Errorf(fmt.Sprintf("Wrong gts name. Expected %s got %s", expectedFullName, fullName))
+		t.Errorf("Wrong gts name. Expected %s got %s", expectedFullName, fullName)
 	}
 }
