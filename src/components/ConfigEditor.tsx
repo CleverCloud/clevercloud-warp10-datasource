@@ -1,6 +1,6 @@
 import React, { ChangeEvent, useState } from 'react';
-import { ActionMeta, Button, Card, IconButton, InlineField, Input, Select, TextArea } from '@grafana/ui';
-import { DataSourcePluginOptionsEditorProps, SelectableValue } from '@grafana/data';
+import { Button, Card, IconButton, InlineField, Input, TextArea } from '@grafana/ui';
+import { DataSourcePluginOptionsEditorProps } from '@grafana/data';
 import { ConstProp, WarpDataSourceOptions } from '../types/types';
 
 interface Props extends DataSourcePluginOptionsEditorProps<WarpDataSourceOptions> {}
@@ -23,17 +23,6 @@ export function ConfigEditor(props: Props) {
       path: event.target.value,
     };
     onOptionsChange({ ...options, jsonData, url: event.target.value });
-  };
-
-  // Modification select access
-  const onAccessChange = (value: SelectableValue<string>, _actionMeta: ActionMeta) => {
-    const valueAccess: 'direct' | 'proxy' = value.value === 'direct' ? 'direct' : 'proxy';
-
-    const updatedOptions = {
-      ...options,
-      access: valueAccess,
-    };
-    onOptionsChange(updatedOptions);
   };
 
   //Modification input name of the new constant
@@ -157,24 +146,6 @@ export function ConfigEditor(props: Props) {
         <h1>HTTP Address</h1>
         <InlineField label="URL" labelWidth={12} tooltip={'Do not append /api/v0/exec at the end of the URL'}>
           <Input onChange={onPathChange} id="url" width={60} value={options.jsonData.path} />
-        </InlineField>
-        <InlineField
-          label="Access"
-          labelWidth={12}
-          tooltip={
-            'Direct = url is used directly from browser(DEPRECATED), Proxy = Grafana backend will proxy the request'
-          }
-        >
-          <Select
-            options={[
-              { value: 'direct', label: 'direct (DEPRECATED)' },
-              { value: 'proxy', label: 'proxy' },
-            ]}
-            value={options.access === 'direct' ? 'direct' : 'proxy'}
-            onChange={onAccessChange}
-            width={60}
-            id={'select'}
-          />
         </InlineField>
       </div>
       <div style={{ marginTop: '3rem' }}>

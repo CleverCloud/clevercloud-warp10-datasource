@@ -2,19 +2,16 @@ import {
   DataQueryRequest,
   DataQueryResponse,
   DataSourceInstanceSettings,
-  FieldType,
   MetricFindValue,
-  MutableDataFrame,
   ScopedVars,
 } from '@grafana/data';
-import { DataSourceWithBackend, FetchResponse, getBackendSrv, getTemplateSrv, TestingStatus } from '@grafana/runtime';
+import { DataSourceWithBackend, FetchResponse, getBackendSrv, getTemplateSrv } from '@grafana/runtime';
 
-import { catchError, from, lastValueFrom, map, mergeMap, Observable } from 'rxjs';
+import { lastValueFrom, map, Observable } from 'rxjs';
 import { reduce } from 'rxjs/operators';
 
 import {
   ConstProp,
-  WarpDataResult,
   WarpDataSourceOptions,
   WarpQuery,
   WarpResult,
@@ -22,13 +19,12 @@ import {
 } from './types/types';
 
 import { isArray, isObject } from 'lodash';
-import { Table } from './types/table';
 
 export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceOptions> {
   //Information database
   private path: string;
 
-  private access: 'direct' | 'proxy';
+  private access: 'proxy';
 
   private const: ConstProp[];
 
@@ -43,7 +39,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
     super(instanceSettings);
     this.path = instanceSettings.jsonData.path ?? '';
 
-    this.access = instanceSettings.access ?? 'proxy';
+    this.access = 'proxy';
 
     this.const = instanceSettings.jsonData.const ?? [];
 
@@ -74,35 +70,7 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
    * @return {Promise<any>} Response
    */
   async testDatasource(): Promise<any> {
-    return this.access === 'direct' ? this.checkHealth() : super.callHealthCheck();
-  }
-
-  async checkHealth(): Promise<any> {
-    let message = '';
-    let status = '';
-
-    const query = lastValueFrom(this.doRequest({ refId: '', expr: '1 2 +', hideLabels: true}));
-
-    await query
-      .then((value) => {
-        if (value.status === 200) {
-          message = 'Datasource is working';
-          status = 'Ok';
-        } else {
-          message = 'An error has occurred';
-          status = 'Error';
-        }
-      })
-      .catch(() => {
-        message = 'An error has occurred';
-        status = 'Error';
-      });
-
-    return {
-      message: message,
-      details: undefined,
-      status: status,
-    } as TestingStatus;
+    return super.callHealthCheck();
   }
 
   query(request: DataQueryRequest<WarpQuery>): Observable<DataQueryResponse> {
@@ -131,98 +99,9 @@ export class DataSource extends DataSourceWithBackend<WarpQuery, WarpDataSourceO
       request.targets[0] = this.applyTemplateVariables(query, request.scopedVars);
     }
 
-    return this.access === 'direct' ? this.queryDirect(request) : super.query(request);
+    return super.query(request);
   }
 
-  queryDirect(request: DataQueryRequest<WarpQuery>): Observable<DataQueryResponse> {
-    const observableQueries = from(request.targets);
-
-    return observableQueries.pipe(
-      //replacing constants
-      map((query) => this.applyTemplateVariables(query, request.scopedVars) as WarpQuery),
-
-      //doing query
-      mergeMap((query) => {
-        return this.doRequest(query);
-      }),
-
-      //creating dataframe
-      map((response: FetchResponse<WarpResult>): DataQueryResponse => {
-        // is it for a Table graph ?
-        if (response.data.length === 1 && response.data[0] && Table.isTable(response.data[0])) {
-          const d: Table = response.data[0] as unknown as Table;
-          return {
-            data: this.createDataFrameFromTable(d),
-          };
-        }
-
-        const refId: string = (request.targets[0] || {}).refId ?? '';
-        let dataFrames: MutableDataFrame[] = [];
-        response.data.map((elt) => {
-          if (isArray(elt)) {
-            dataFrames = [...dataFrames, ...elt.map((d: WarpDataResult) => this.createDataFrame(refId, d))];
-          } else {
-            dataFrames = [...dataFrames, this.createDataFrame(refId, elt)];
-          }
-        });
-
-        return {
-          data: dataFrames,
-        };
-      }),
-      catchError((error, _) => {
-        console.log('error', error);
-        throw error;
-      })
-    );
-  }
-
-  createDataFrameFromTable(d: Table) {
-    return [
-      new MutableDataFrame({
-        // @ts-ignore : should return this kind of object to be compatible to ovh plugin
-        fields: d.columns.map((c, index) => {
-          let obj = {
-            name: c.text,
-            config: {},
-            type: c.type,
-            values: d.rows.map((r) => r[index]),
-          };
-
-          if (c.sort && c.desc) {
-            obj = {
-              ...obj,
-              config: {
-                sort: c.sort,
-                desc: c.desc,
-              },
-            };
-          }
-
-          return obj;
-        }),
-      }),
-    ];
-  }
-
-  createDataFrame(refId: string, d: WarpDataResult): MutableDataFrame {
-    return new MutableDataFrame({
-      refId: refId,
-      name: d.c || '',
-      fields: [
-        {
-          name: 'Time',
-          type: FieldType.time,
-          values: d.v.map((point) => point[0] / 1000),
-        },
-        {
-          name: 'Value',
-          type: FieldType.number || FieldType.string,
-          values: d.v.map((point) => point[point.length - 1]),
-        },
-      ],
-    });
-  }
 
   /**
    * send request to Warp10
