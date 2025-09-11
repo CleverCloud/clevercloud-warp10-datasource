@@ -1,4 +1,4 @@
-ARG grafana_version=11.6.2
+ARG grafana_version=12.1.1
 FROM grafana/grafana:${grafana_version}
 
 # Inject plugin

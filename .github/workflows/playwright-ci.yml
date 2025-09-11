@@ -12,5 +12,5 @@ jobs:
   playwright-tests:
     uses: ./.github/workflows/playwright.yml
     with:
-      grafana-version: 11.6.3
+      grafana-version: 12.1.1
       with-firefox: true
