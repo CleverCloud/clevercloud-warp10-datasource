@@ -7,7 +7,7 @@
  * Scope: editor (query editor rendering and behavior)
  */
 import { test, expect } from '@playwright/test';
-import { log, getGrafanaVersion, goToNewDashboard, clickEditButton } from '../utils';
+import { log, getGrafanaVersion, goToNewDashboard, clickEditPanelButton, defaultTimeout } from '../utils';
 
 // Editor JSON Model Validation
 test('Editor: test all features in request editor component', async ({ page }) => {
@@ -44,16 +44,12 @@ test('Editor: test all features in request editor component', async ({ page }) =
   log(`--> Detected Grafana version: ${version}`);
 
   await page.goto('http://localhost:3000/dashboards');
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(defaultTimeout);
   await goToNewDashboard(page);
+  await page.waitForTimeout(defaultTimeout);
 
-  await page
-    .getByRole('button', {
-      name: 'Menu for panel with title Graph Example',
-    })
-    .click();
-
-  await clickEditButton(page);
+  await clickEditPanelButton(page, 'Graph Example');
+  await page.waitForTimeout(defaultTimeout);
 
   // Wait for editor
   log('--> Waiting for query editor...');
@@ -64,12 +60,12 @@ test('Editor: test all features in request editor component', async ({ page }) =
 
   // Verify responses
 
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(defaultTimeout);
   for (let i = 0; i < 10; i++) {
     if (responses.length > 0) {
       break;
     }
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(defaultTimeout);
   }
 
   expect(responses.length).toBeGreaterThan(0);

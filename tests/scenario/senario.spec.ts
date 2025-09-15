@@ -67,8 +67,9 @@ test('Basic scenario: Create DS, Dashboard, Select Datasource, Get Warp10 Respon
   // === Step 1: Create datasource ===
   log('--> Creating new Warp10 datasource');
   await page.goto(`http://localhost:3000${basePath}`);
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(2000);
   await page.getByRole('button', { name: 'Warp10' }).click();
+  await page.waitForTimeout(2000);
 
   // Fill datasource config
   log('--> Filling datasource config');
@@ -101,22 +102,22 @@ test('Basic scenario: Create DS, Dashboard, Select Datasource, Get Warp10 Respon
   // === Step 2: Build dashboard ===
   log('--> Opening dashboard creation wizard');
   await page.getByRole('link', { name: 'Build a dashboard' }).click();
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(1000);
 
   log('--> Creating new panel');
   await clickAddPanelButton(page);
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(1000);
 
   log('--> Selecting created datasource');
   await page.locator('[data-testid="data-source-card"] span', { hasText: 'test_warp10' }).click();
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(1000);
 
   log('--> Injecting Warp10 query into editor');
   await page.locator('.query-editor-row textarea').first().fill('1 2 +');
 
   log('--> Triggering query execution');
   await page.getByTestId('data-testid RefreshPicker run button').click();
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(1000);
 
   // === Step 3: Validate results ===
   log('--> Validating last query response...');
@@ -126,7 +127,7 @@ test('Basic scenario: Create DS, Dashboard, Select Datasource, Get Warp10 Respon
   log('--> Navigating to datasource management page');
   await page.goto(`http://localhost:3000${myDsPath}`);
   await page.getByRole('link', { name: 'test_warp10' }).click();
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(1000);
 
   log('--> Deleting datasource...');
   await deleteButton.click();
