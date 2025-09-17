@@ -59,44 +59,10 @@ test('Healthcheck in proxy and direct modes', async ({ page }) => {
     throw new Error('No health check response (proxy mode)');
   }
 
-  // Switch to direct mode
-  log('--> Switching to access mode: direct...');
-  await page.locator('#select').click();
-  await page.getByText('direct (DEPRECATED)', { exact: true }).click();
-  await page.waitForTimeout(500);
-
-  log('--> Saving datasource in direct mode...');
-  healthResponse = null;
-  await page.getByRole('button', { name: saveButton.name }).click();
-  await page.waitForTimeout(5000);
-
-  let alertTextDirect = '';
-  try {
-    const alert = page.locator('[data-testid="data-testid Alert info"]');
-    await expect(alert).toBeVisible({ timeout: 5000 });
-    alertTextDirect = (await alert.textContent())?.trim() || '';
-    log(`--> [direct] Alert: "${alertTextDirect}"`);
-  } catch {
-    log('--> No alert shown within 5s for direct mode');
-  }
-
-  // You can make this stricter or looser depending on your backend expectation
-  if (alertTextDirect.toLowerCase().includes('error') || alertTextDirect.toLowerCase().includes('refused')) {
-    log('--> Health check failed as expected for access=direct');
-  } else {
-    log('--> Access=direct did not clearly fail (check backend config if needed)');
-  }
-
-  // Switch back to proxy mode
-  log('--> Switching back to access mode: proxy...');
-  await page.locator('#select').click();
-  await page.getByText('proxy', { exact: true }).click();
-  await page.waitForTimeout(500);
-
   log('--> Saving datasource again (proxy mode)...');
   healthResponse = null;
   await page.getByRole('button', { name: saveButton.name }).click();
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(3000);
 
   try {
     const alert = page.locator('[data-testid="data-testid Alert success"]');

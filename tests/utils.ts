@@ -1,6 +1,9 @@
 import { expect, Page, Request as PWRequest, Response as PWResponse } from '@playwright/test';
 import { Locator } from 'playwright';
 
+// in ms
+export const defaultTimeout = 2000;
+
 export function log(message: string) {
   const now = new Date().toISOString().replace('T', ' ').replace('Z', '');
   console.log(`[${now}] ${message}`);
@@ -304,9 +307,13 @@ export async function createDashboardWithQueryVariable(
   log('--> Clicked "Add variable"');
 
   // Set variable type to "Query"
-  await page.click('input[id^="variable-select-input-Select variable type"]');
+  await page.click('[data-testid="data-testid Variable editor Form Type select"]');
   log('--> Clicked type input for variable type selection');
-  await page.fill('input[id^="variable-select-input-Select variable type"]', 'Query');
+  try {
+    await page.click('[data-testid="data-testid Select option"]  >> span:has-text("Query")');
+  } catch (err) {
+    await page.click('[data-testid="data-testid Select option"]  >> span:has-text("Query")');
+  }
   log('--> Set variable type to "Query"');
 
   // Set variable name
@@ -339,6 +346,23 @@ export async function createDashboardWithQueryVariable(
   log('--> Dashboard with variable created');
 }
 
+async function selectTypeInVariablePanel(page: Page, varType: String) {
+  log('--> Try to opened variable type dropdown...');
+  await page.click('[data-testid="data-testid Variable editor Form Type select"]');
+  log('--> Variable type dropdown opened');
+
+  // need to change the selector according to Grafana version
+  const gfVersionMajor = (await getGrafanaVersion(page)).split('.')[0];
+  log(`--> Detect grafana version: ${gfVersionMajor}`);
+  if (gfVersionMajor === '12') {
+    await page.click(`[data-testid="data-testid Select menu"]  >> span:has-text("${varType}")`);
+  } else {
+    await page.click(`[data-testid="data-testid Select option"]  >> span:has-text("${varType}")`);
+  }
+  log(`--> Typed "${varType}" into variable type input`);
+  log(`--> Selected "${varType}" from dropdown`);
+}
+
 export async function createDashboardWithConstVariable(
   page: Page,
   dsName: string,
@@ -358,12 +382,7 @@ export async function createDashboardWithConstVariable(
   log('--> Clicked "Add variable"');
 
   // 1. Set variable type first
-  await page.click('input[id^="variable-select-input-Select variable type"]');
-  log('--> Opened variable type dropdown');
-  await page.fill('input[id^="variable-select-input-Select variable type"]', 'Constant');
-  log('--> Typed "Constant" into variable type input');
-  await page.getByText('Constant', { exact: true }).click();
-  log('--> Selected "Constant" from dropdown');
+  await selectTypeInVariablePanel(page, 'Constant');
 
   // 2. Now set variable name (AFTER type)
   await page.fill('[data-testid="data-testid Variable editor Form Name field"]', varName);
@@ -407,12 +426,7 @@ export async function createDashboardWithCustomMultiVariable(
   log('--> Clicked "Add variable"');
 
   // 1. Set variable type first
-  await page.click('input[id^="variable-select-input-Select variable type"]');
-  log('--> Opened variable type dropdown');
-  await page.fill('input[id^="variable-select-input-Select variable type"]', 'Custom');
-  log('--> Typed "Custom" into variable type input');
-  await page.getByText('Custom', { exact: true }).click();
-  log('--> Selected "Custom" from dropdown');
+  await selectTypeInVariablePanel(page, 'Custom');
 
   // 2. Set variable name (AFTER type)
   await page.fill('[data-testid="data-testid Variable editor Form Name field"]', varName);
@@ -423,7 +437,16 @@ export async function createDashboardWithCustomMultiVariable(
   log(`--> Set custom variable values to "${varValues.join(',')}"`);
 
   // 4. Enable Multi-value
-  await page.getByLabel('Multi-value').check();
+  await page.waitForTimeout(defaultTimeout);
+  await page.waitForSelector('input[data-testid="data-testid Variable editor Form Multi switch"]:visible', {
+    state: 'attached',
+  });
+  await page
+    .locator('input[data-testid="data-testid Variable editor Form Multi switch"]')
+    .first()
+    .check({ force: true });
+
+  await page.waitForTimeout(defaultTimeout);
   log('--> Enabled Multi-value for custom variable');
 
   // Save the variable
@@ -479,12 +502,7 @@ export async function createDashboardWithIntervalVariable(
   log('--> Clicked "Add variable"');
 
   // Set variable type to "Interval"
-  await page.click('input[id^="variable-select-input-Select variable type"]');
-  log('--> Opened variable type dropdown');
-  await page.fill('input[id^="variable-select-input-Select variable type"]', 'Interval');
-  log('--> Typed "Interval" into variable type input');
-  await page.getByText('Interval', { exact: true }).click();
-  log('--> Selected "Interval" from dropdown');
+  await selectTypeInVariablePanel(page, 'Interval');
 
   // Set variable name (default is "interval", but set it explicitly)
   await page.fill('[data-testid="data-testid Variable editor Form Name field"]', varName);
@@ -953,7 +971,7 @@ export async function goToDashboard(page: Page, dashboardName: string) {
 }
 
 export async function goToNewDashboard(page: Page) {
-  goToDashboard(page, "New dashboard");
+  await goToDashboard(page, 'New dashboard');
 }
 
 export async function createNewPanel(page: Page, panelTitle = 'Test Editor JSON', panelQuery = '1 2 +') {
@@ -1158,21 +1176,20 @@ export async function getPanelJsonModel(page: Page): Promise<string> {
 }
 
 export async function clickEditButton(page: Page) {
-  const roleBased = page.getByRole('link', { name: 'Edit' });
-  if ((await roleBased.count()) > 0 && (await roleBased.first().isVisible())) {
-    await roleBased.first().click();
-    console.log('Clicked Edit link (role=link).');
+  const editBtn = page.locator('button[data-testid="data-testid Edit dashboard button"]');
+
+  if ((await editBtn.count()) > 0) {
+    page.click('button[data-testid="data-testid Edit dashboard button"]');
     return;
   }
 
-  const menuItemEdit = page.locator('button[role="menuitem"]:has-text("Edit")');
-  if ((await menuItemEdit.count()) > 0 && (await menuItemEdit.first().isVisible())) {
-    await menuItemEdit.first().click();
-    console.log('Clicked Edit button (role=menuitem).');
-    return;
-  }
+  throw new Error('Edit button in dashboard not found');
+}
 
-  throw new Error('Edit button not found in either format.');
+export async function clickEditPanelButton(page: Page, panelTitle: string) {
+  await page.locator(`button[title="Menu"][data-testid="data-testid Panel menu ${panelTitle}"]`).click();
+  await page.waitForTimeout(defaultTimeout);
+  await page.locator(`[data-testid="data-testid Panel menu item Edit"]`).click();
 }
 
 export async function fillPairAndClickAdd({

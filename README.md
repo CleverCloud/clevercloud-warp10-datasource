@@ -57,6 +57,8 @@ On a new dashboard, in a Graph visualization, click on Query icon on the left si
 
 A text editor will appear. You can use the global variable you defined previously.
 
+> Shortcut: In the query editor, use CTRL+Enter to run your query 
+
 #### Graph example
 
 The plugin look for GTS or GTS array in your stack, all other stack entry will be ignored.

@@ -8,7 +8,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { log, getGrafanaVersion, goToNewDashboard, clickEditButton } from '../../utils';
+import { log, getGrafanaVersion, goToNewDashboard, clickEditButton, clickEditPanelButton } from '../../utils';
 
 // === TEST: Editor JSON Model Validation ===
 test('macros: Warp10 macro definition and usage (positive and negative)', async ({ page }) => {
@@ -19,14 +19,7 @@ test('macros: Warp10 macro definition and usage (positive and negative)', async 
   await page.waitForTimeout(1000);
   await goToNewDashboard(page);
 
-  // Click "Menu for panel with title Graph Example"
-  await page
-    .getByRole('button', {
-      name: 'Menu for panel with title Graph Example',
-    })
-    .click();
-
-  await clickEditButton(page);
+  await clickEditPanelButton(page, 'Graph Example');
 
   // Wait for editor to be ready
   log('--> Waiting for query editor...');
