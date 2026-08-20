@@ -4,17 +4,31 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	b "github.com/miton18/go-warp10/base"
 	"github.com/tidwall/gjson"
-	_ "github.com/tidwall/gjson"
-	"sort"
-	"strings"
-	"sync"
-	"time"
+)
+
+const (
+	execPath = "/api/v0/exec"
+
+	// Maximum number of bytes read from a failing response body to build the
+	// error message reported back to Grafana.
+	errBodyLimit = 8 << 10
+
+	// Past that leftover size, draining the body costs more than dropping the
+	// connection: let Close discard it instead of recycling it.
+	drainLimit = 64 << 10
 )
 
 // Make sure Datasource implements required interfaces. This is important to do
@@ -39,23 +53,72 @@ func NewDatasource(_ context.Context, ds backend.DataSourceInstanceSettings) (in
 		logger.Error("Unmarshall json data error")
 	}
 
-	var client *b.Client = b.NewClient(jsonData.Path)
+	return newDatasource(jsonData.Path), nil
+}
 
-	return &Datasource{client}, nil
+// newDatasource builds a Datasource with its own HTTP client, so that Dispose
+// can release the connections belonging to this instance only.
+func newDatasource(path string) *Datasource {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	// Default is 2, which forces a fresh connection per concurrent panel.
+	transport.MaxIdleConnsPerHost = 10
+
+	return &Datasource{
+		url:        strings.TrimRight(path, "/"),
+		httpClient: &http.Client{Transport: transport},
+	}
 }
 
 // Datasource is an datasource which can respond to data queries, reports
 // its health and has streaming skills.
 type Datasource struct {
-	client *b.Client
+	url        string
+	httpClient *http.Client
+}
+
+// exec runs a WarpScript on the backend and returns the raw response body.
+// The response body is drained and closed on every path, including non-200
+// statuses: leaving it open keeps the socket out of the connection pool
+// forever, which is what leaks file descriptors in CLOSE_WAIT.
+func (d *Datasource) exec(ctx context.Context, warpScript string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.url+execPath, strings.NewReader(warpScript))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "text/plain; charset=UTF-8")
+
+	res, err := d.httpClient.Do(req)
+	if err != nil {
+		// On transport errors res is nil, there is nothing to close.
+		return nil, err
+	}
+	defer func() {
+		// Drain what is left so the connection can go back to the pool, then
+		// close. Closing a partially read body discards the connection.
+		_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, drainLimit))
+		_ = res.Body.Close()
+	}()
+
+	if res.StatusCode != http.StatusOK {
+		if msg := res.Header.Get(b.HeaderErrorMessage); msg != "" {
+			return nil, fmt.Errorf("warp10 %s: %s", res.Status, msg)
+		}
+		body, _ := io.ReadAll(io.LimitReader(res.Body, errBodyLimit))
+		return nil, fmt.Errorf("warp10 %s: %s", res.Status, strings.TrimSpace(string(body)))
+	}
+
+	return io.ReadAll(res.Body)
 }
 
 // Dispose here tells plugin SDK that plugin wants to clean up resources when a new instance
 // created. As soon as datasource settings change detected by SDK old datasource instance will
 // be disposed and a new one will be created using NewSampleDatasource factory function.
 func (d *Datasource) Dispose() {
-	// Clean up datasource instance resources.
-	d.client = nil
+	// Clean up datasource instance resources: the transport belongs to this
+	// instance, its idle connections would otherwise outlive it.
+	if d.httpClient != nil {
+		d.httpClient.CloseIdleConnections()
+	}
 }
 
 // QueryData handles multiple queries and returns multiple responses.
@@ -92,7 +155,7 @@ func (d *Datasource) QueryData(ctx context.Context, req *backend.QueryDataReques
 	return response, nil
 }
 
-func (d *Datasource) query(_ context.Context, pCtx backend.PluginContext, query backend.DataQuery) backend.DataResponse {
+func (d *Datasource) query(ctx context.Context, pCtx backend.PluginContext, query backend.DataQuery) backend.DataResponse {
 	logger := log.New()
 
 	// Recup warpscript text
@@ -104,7 +167,7 @@ func (d *Datasource) query(_ context.Context, pCtx backend.PluginContext, query 
 	}
 
 	// Exec query
-	body, err := d.client.Exec(wsQuery.Expr)
+	body, err := d.exec(ctx, wsQuery.Expr)
 	if err != nil {
 		var errStr = fmt.Sprintf("client exec: %v", err.Error())
 		logger.Error(errStr)
@@ -152,11 +215,11 @@ func (d *Datasource) query(_ context.Context, pCtx backend.PluginContext, query 
 // The main use case for these health checks is the test button on the
 // datasource configuration page which allows users to verify that
 // a datasource is working as expected.
-func (d *Datasource) CheckHealth(_ context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
+func (d *Datasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
 	var status = backend.HealthStatusOk
 	var message = "Data source is working !"
 
-	_, err := d.client.Exec("1 2 +")
+	_, err := d.exec(ctx, "1 2 +")
 
 	if err != nil {
 		status = backend.HealthStatusError
