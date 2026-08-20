@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	l "github.com/grafana/grafana-plugin-sdk-go/backend/log"
-	b "github.com/miton18/go-warp10/base"
 	"log"
 	"os"
 	"testing"
@@ -17,7 +16,6 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-var client *b.Client
 var ds Datasource
 
 func TestMain(m *testing.M) {
@@ -46,8 +44,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Failed to get 8080/tcp port")
 	}
 	warpPort := port["8080/tcp"][0].HostPort
-	client = b.NewClient(fmt.Sprintf("http://localhost:%v", warpPort))
-	ds = Datasource{client}
+	ds = *newDatasource(fmt.Sprintf("http://localhost:%v", warpPort))
 
 	exitVal := m.Run()
 
