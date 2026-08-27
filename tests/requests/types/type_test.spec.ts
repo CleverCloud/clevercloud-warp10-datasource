@@ -15,6 +15,13 @@ import { log, getGrafanaVersion, createNewDashboardAndSelectWarp10 } from '../..
 test('Warp10 Request Test: response types, formatting, macros, nulls, timestamps', async ({ page }) => {
   const responses: any[] = [];
 
+  // Runs the current query and waits until its response has been captured by the listener below
+  const runQueryAndWaitForCapture = async () => {
+    const before = responses.length;
+    await page.getByTestId('data-testid RefreshPicker run button').click();
+    await expect.poll(() => responses.length, { timeout: 15000 }).toBeGreaterThan(before);
+  };
+
   // === Step 1: Intercept responses ===
   page.on('response', async (response) => {
     const url = response.url();
@@ -45,7 +52,12 @@ test('Warp10 Request Test: response types, formatting, macros, nulls, timestamps
   log(`--> Detected Grafana version: ${version}`);
 
   await page.goto('http://localhost:3000/dashboard/new');
-  await page.waitForTimeout(1000);
+  // createNewDashboardAndSelectWarp10 looks the add-panel button up with $() (no auto-wait)
+  await page
+    .getByTestId('data-testid Create new panel button')
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
 
   await createNewDashboardAndSelectWarp10(page);
 
@@ -60,8 +72,7 @@ $int NOW NaN NaN NaN 42 ADDVALUE
 $int
   `);
 
-  await page.getByTestId('data-testid RefreshPicker run button').click();
-  await page.waitForTimeout(2000);
+  await runQueryAndWaitForCapture();
 
   const last = responses.at(-1);
   expect(last).toBeDefined();
@@ -79,8 +90,7 @@ NEWGTS 'float' STORE
 $float NOW NaN NaN NaN 3.14 ADDVALUE
 $float
 `);
-  await page.getByTestId('data-testid RefreshPicker run button').click();
-  await page.waitForTimeout(2000);
+  await runQueryAndWaitForCapture();
 
   const floatResp = responses.at(-1);
   expect(floatResp).toBeDefined();
@@ -96,8 +106,7 @@ NEWGTS 'bool' STORE
 $bool NOW NaN NaN NaN 'true' ADDVALUE
 $bool
 `);
-  await page.getByTestId('data-testid RefreshPicker run button').click();
-  await page.waitForTimeout(2000);
+  await runQueryAndWaitForCapture();
 
   const boolResp = responses.at(-1);
   expect(boolResp).toBeDefined();
@@ -112,8 +121,7 @@ NEWGTS 'string' STORE
 $string NOW NaN NaN NaN 'hello' ADDVALUE
 $string
 `);
-  await page.getByTestId('data-testid RefreshPicker run button').click();
-  await page.waitForTimeout(2000);
+  await runQueryAndWaitForCapture();
 
   const stringResp = responses.at(-1);
   expect(stringResp).toBeDefined();
@@ -133,8 +141,7 @@ $withData NOW NaN NaN NaN 123 ADDVALUE
 [ $withData $empty ]
 `);
 
-  await page.getByTestId('data-testid RefreshPicker run button').click();
-  await page.waitForTimeout(2000);
+  await runQueryAndWaitForCapture();
 
   // Extract last response
   const nullResp = responses.at(-1);
@@ -168,8 +175,7 @@ NEWGTS 'scalar' STORE
 $scalar NOW NaN NaN NaN 1234 ADDVALUE
 $scalar
 `);
-  await page.getByTestId('data-testid RefreshPicker run button').click();
-  await page.waitForTimeout(2000);
+  await runQueryAndWaitForCapture();
 
   const scalarResp = responses.at(-1);
   expect(scalarResp).toBeDefined();

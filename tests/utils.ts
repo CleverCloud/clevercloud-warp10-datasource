@@ -20,8 +20,12 @@ async function openDashboardEdit(page: Page) {
   if ((await editBtn.count()) && (await editBtn.first().isVisible())) {
     await editBtn.first().click();
     log('--> Clicked "Edit dashboard"');
-    // Wait for the edit UI to load
-    await page.waitForTimeout(200);
+    // Wait for the edit UI to load; the settings lookup below relies on count() so it needs the button rendered
+    await page
+      .getByTestId('data-testid Dashboard settings')
+      .first()
+      .waitFor({ state: 'visible', timeout: 5000 })
+      .catch(() => {});
   } else {
     log('--> Edit button not found or not visible (maybe already in edit mode or old Grafana version)');
   }
@@ -160,15 +164,24 @@ export async function clickAddPanelButton(page: Page) {
 export async function setupDatasource(page: Page, dsName: string) {
   log('--> Creating test datasource');
   await page.goto('http://localhost:3000/connections/datasources/new');
+  // Let the SPA finish hydrating before interacting, otherwise clicks can land on inert elements
+  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
   await page.getByRole('button', { name: 'Warp10' }).click();
   log('--> Clicked "Warp10" datasource');
   await page.fill('#basic-settings-name', dsName);
   log(`--> Entered datasource name: ${dsName}`);
   await page.fill('#url', 'http://warp10:8080');
   log('--> Entered datasource URL');
+  // Selecting the Warp10 tile already created the datasource and navigated to its edit page;
+  // "Save & test" issues a PUT there, so sync on that save round-trip
+  const saveResponse = page
+    .waitForResponse((res) => res.url().includes('/api/datasources') && res.request().method() === 'PUT', {
+      timeout: 15000,
+    })
+    .catch(() => null);
   await page.getByRole('button', { name: 'Save & test' }).click();
   log('--> Clicked "Save & test"');
-  await page.waitForTimeout(1000);
+  await saveResponse;
   log('--> Datasource setup complete');
 }
 
@@ -193,7 +206,11 @@ async function openDashboardSettingsForDelete(page: Page) {
     if (btn) {
       await btn.click();
       log(`--> Clicked dashboard settings with selector: ${sel}`);
-      await page.waitForTimeout(300);
+      // The caller looks the delete button up with $() (no auto-wait), so wait for the settings page here
+      await page
+        .locator('button[data-testid="data-testid Dashboard settings page delete dashboard button"]')
+        .waitFor({ state: 'visible', timeout: 5000 })
+        .catch(() => {});
       return;
     }
   }
@@ -211,8 +228,12 @@ async function openDashboardByTitle(page: Page, dashboardTitle: string) {
   if (await generalSection.count()) {
     await generalSection.first().click();
     log('--> Opened "General" folder');
-    // Wait a little for dashboards to appear after folder click
-    await page.waitForTimeout(300);
+    // Wait for dashboards to appear after the folder click (count() below has no auto-wait)
+    await page
+      .getByText(dashboardTitle, { exact: true })
+      .first()
+      .waitFor({ state: 'visible', timeout: 5000 })
+      .catch(() => {});
     dash = page.getByText(dashboardTitle, { exact: true });
     if (await dash.count()) {
       await dash.first().click();
@@ -244,7 +265,9 @@ async function clickSaveDashboardButton(page: Page) {
         btn = page.locator(sel.css);
       }
       if (btn && (await btn.count()) && (await btn.first().isVisible())) {
-        await btn.first().click();
+        // Short click timeout: a wrong candidate must fall through to the next selector,
+        // not eat the whole test timeout in its actionability wait
+        await btn.first().click({ timeout: 3000 });
         log(`--> Clicked Save Dashboard button using ${sel.method} selector`);
         return;
       }
@@ -256,6 +279,12 @@ async function clickSaveDashboardButton(page: Page) {
 }
 
 async function clickDashboardFinalSaveButton(page: Page) {
+  // The save drawer animates open; give its button a chance to appear before probing selectors
+  await page
+    .getByTestId('data-testid Save dashboard drawer button')
+    .first()
+    .waitFor({ state: 'visible', timeout: 5000 })
+    .catch(() => {});
   const selectors = [
     { method: 'role', role: 'button', name: 'Save dashboard button' },
     { method: 'testId', testId: 'data-testid Save dashboard drawer button' },
@@ -277,7 +306,9 @@ async function clickDashboardFinalSaveButton(page: Page) {
         btn = page.locator(sel.css);
       }
       if (btn && (await btn.count()) && (await btn.first().isVisible())) {
-        await btn.first().click();
+        // Short click timeout: a wrong candidate must fall through to the next selector,
+        // not eat the whole test timeout in its actionability wait
+        await btn.first().click({ timeout: 3000 });
         log(
           `--> Clicked Save button using ${sel.method}${sel.testId ? ' ' + sel.testId : sel.name ? ' ' + sel.name : ''}`
         );
@@ -297,7 +328,12 @@ export async function createDashboardWithQueryVariable(
 ) {
   log('--> Creating dashboard with Query variable');
   await page.goto('http://localhost:3000/dashboard/new');
-  await page.waitForTimeout(500);
+  // Wait for the new-dashboard toolbar; the helpers below look buttons up without auto-wait
+  await page
+    .getByTestId('data-testid Dashboard settings')
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
 
   // Open Dashboard settings
   await clickDashboardSettingsButton(page);
@@ -338,7 +374,6 @@ export async function createDashboardWithQueryVariable(
   // Save the dashboard
   await clickSaveDashboardButton(page);
   log('--> Clicked save');
-  await page.waitForTimeout(1000);
   await page.fill('input[aria-label="Save dashboard title field"]', dashboardTitle);
   log(`--> Set dashboard title: "${dashboardTitle}"`);
   await clickDashboardFinalSaveButton(page);
@@ -372,7 +407,12 @@ export async function createDashboardWithConstVariable(
 ) {
   log('--> Creating dashboard with Const variable');
   await page.goto('http://localhost:3000/dashboard/new');
-  await page.waitForTimeout(500);
+  // Wait for the new-dashboard toolbar; the helpers below look buttons up without auto-wait
+  await page
+    .getByTestId('data-testid Dashboard settings')
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
 
   // Open Dashboard settings
   await clickDashboardSettingsButton(page);
@@ -399,7 +439,6 @@ export async function createDashboardWithConstVariable(
   // Save the dashboard
   await clickSaveDashboardButton(page);
   log('--> Clicked save');
-  await page.waitForTimeout(1000);
   await page.fill('input[aria-label="Save dashboard title field"]', dashboardTitle);
   log(`--> Set dashboard title: "${dashboardTitle}"`);
   await clickDashboardFinalSaveButton(page);
@@ -416,7 +455,12 @@ export async function createDashboardWithCustomMultiVariable(
 ): Promise<boolean> {
   log('--> Creating dashboard with Custom multi-value variable');
   await page.goto('http://localhost:3000/dashboard/new');
-  await page.waitForTimeout(500);
+  // Wait for the new-dashboard toolbar; the helpers below look buttons up without auto-wait
+  await page
+    .getByTestId('data-testid Dashboard settings')
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
 
   // Open Dashboard settings
   await clickDashboardSettingsButton(page);
@@ -437,7 +481,6 @@ export async function createDashboardWithCustomMultiVariable(
   log(`--> Set custom variable values to "${varValues.join(',')}"`);
 
   // 4. Enable Multi-value
-  await page.waitForTimeout(defaultTimeout);
   await page.waitForSelector('input[data-testid="data-testid Variable editor Form Multi switch"]:visible', {
     state: 'attached',
   });
@@ -446,7 +489,9 @@ export async function createDashboardWithCustomMultiVariable(
     .first()
     .check({ force: true });
 
-  await page.waitForTimeout(defaultTimeout);
+  await expect(
+    page.locator('input[data-testid="data-testid Variable editor Form Multi switch"]').first()
+  ).toBeChecked();
   log('--> Enabled Multi-value for custom variable');
 
   // Save the variable
@@ -456,7 +501,6 @@ export async function createDashboardWithCustomMultiVariable(
   // Save the dashboard
   await clickSaveDashboardButton(page);
   log('--> Clicked save');
-  await page.waitForTimeout(1000);
   await page.fill('input[aria-label="Save dashboard title field"]', dashboardTitle);
   log(`--> Set dashboard title: "${dashboardTitle}"`);
   await clickDashboardFinalSaveButton(page);
@@ -466,15 +510,18 @@ export async function createDashboardWithCustomMultiVariable(
   const el = page.getByTestId('data-testid template variable');
   if ((await el.count()) > 0 && (await el.isVisible()) && indicator === false) {
     await el.click();
-    await page.waitForTimeout(300);
+    // Wait for the variable dropdown options to render (count() below has no auto-wait)
+    await page
+      .getByText('sensorsB', { exact: true })
+      .first()
+      .waitFor({ state: 'visible', timeout: 5000 })
+      .catch(() => {});
     for (const sensor of ['sensorsB', 'sensorsC']) {
       const option = page.getByText(sensor, { exact: true });
       if (await option.count()) {
         await option.click();
-        await page.waitForTimeout(100);
       }
     }
-    await page.waitForTimeout(500);
     log('--> Selected all sensors for variable');
   } else {
     log('--> Element data-testid template variable Not Found');
@@ -492,7 +539,12 @@ export async function createDashboardWithIntervalVariable(
 ) {
   log('--> Creating dashboard with Interval variable');
   await page.goto('http://localhost:3000/dashboard/new');
-  await page.waitForTimeout(500);
+  // Wait for the new-dashboard toolbar; the helpers below look buttons up without auto-wait
+  await page
+    .getByTestId('data-testid Dashboard settings')
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
 
   // Open Dashboard settings
   await clickDashboardSettingsButton(page);
@@ -515,7 +567,6 @@ export async function createDashboardWithIntervalVariable(
   // Save the dashboard
   await clickSaveDashboardButton(page);
   log('--> Clicked save');
-  await page.waitForTimeout(1000);
   await page.fill('input[aria-label="Save dashboard title field"]', dashboardTitle);
   log(`--> Set dashboard title: "${dashboardTitle}"`);
   await clickDashboardFinalSaveButton(page);
@@ -534,8 +585,12 @@ export async function executeQueryAndCapturePayload(
 }> {
   log('--> Preparing to execute query in panel');
 
-  await page.waitForTimeout(1000);
   const backBtn = page.locator('button[data-testid="data-testid Back to dashboard button"]');
+  // count()/isVisible() below have no auto-wait, so give the button a chance to render
+  await backBtn
+    .first()
+    .waitFor({ state: 'visible', timeout: 5000 })
+    .catch(() => {});
   if ((await backBtn.count()) && (await backBtn.first().isVisible())) {
     await backBtn.first().click();
     log('--> Clicked "Back to dashboard"');
@@ -596,8 +651,12 @@ export async function executeQueryAndCapturePayloadMulti(
 }> {
   log('--> Preparing to execute query in panel');
 
-  await page.waitForTimeout(1000);
   const backBtn = page.locator('button[data-testid="data-testid Back to dashboard button"]');
+  // count()/isVisible() below have no auto-wait, so give the button a chance to render
+  await backBtn
+    .first()
+    .waitFor({ state: 'visible', timeout: 5000 })
+    .catch(() => {});
   if ((await backBtn.count()) && (await backBtn.first().isVisible())) {
     await backBtn.first().click();
     log('--> Clicked "Back to dashboard"');
@@ -612,16 +671,24 @@ export async function executeQueryAndCapturePayloadMulti(
   const el = page.getByTestId('data-testid template variable');
   if ((await el.count()) > 0 && (await el.isVisible()) && indicator === false) {
     await el.click();
-    await page.waitForTimeout(300);
+    // Wait for the variable dropdown options to render (count() below has no auto-wait)
+    await page
+      .getByText('sensorB', { exact: true })
+      .first()
+      .waitFor({ state: 'visible', timeout: 5000 })
+      .catch(() => {});
     for (const sensor of ['sensorB', 'sensorC']) {
       const option = page.getByText(sensor, { exact: true });
       if (await option.count()) {
         await option.click();
-        await page.waitForTimeout(100);
       }
     }
-    page.getByTestId('data-testid RefreshPicker run button').click();
-    await page.waitForTimeout(500);
+    // Fire-and-forget refresh, as before: this click can be intercepted by transient overlays
+    // and the actual synchronized run happens below
+    void page
+      .getByTestId('data-testid RefreshPicker run button')
+      .click({ timeout: 5000 })
+      .catch(() => {});
     log('--> Selected all sensors for variable');
   } else {
     log('--> Element data-testid template variable Not Found');
@@ -630,8 +697,8 @@ export async function executeQueryAndCapturePayloadMulti(
   await editor.fill(query);
   log(`--> Entered query:\n${query}`);
 
-  await page.waitForTimeout(3000);
-  page.getByTestId('data-testid RefreshPicker run button').click();
+  // Make sure the editor content is committed before triggering the run
+  await expect(editor).toHaveValue(query);
   // Wait for the request and response triggered by clicking "Run"
   const [queryRequest, queryResponse] = await Promise.all([
     page.waitForRequest((req) => req.url().includes('/api/ds/query') && req.method() === 'POST'),
@@ -682,8 +749,12 @@ export async function executeQueryAndValidate(
   let queryResponse: PWResponse | undefined;
 
   // UI steps to create panel and execute query
-  await page.waitForTimeout(1000);
   const backBtn = page.locator('button[data-testid="data-testid Back to dashboard button"]');
+  // count()/isVisible() below have no auto-wait, so give the button a chance to render
+  await backBtn
+    .first()
+    .waitFor({ state: 'visible', timeout: 5000 })
+    .catch(() => {});
   if ((await backBtn.count()) && (await backBtn.first().isVisible())) {
     await backBtn.first().click();
     log('--> Clicked "Back to dashboard"');
@@ -696,7 +767,7 @@ export async function executeQueryAndValidate(
   log(`--> Selected datasource: ${dsName}`);
   const editor = page.locator('.query-editor-row textarea').first();
   await editor.fill(query);
-  await page.waitForTimeout(1000);
+  await expect(editor).toHaveValue(query);
   log(`--> Entered query:\n${query}`);
 
   // Wait for the request and response triggered by clicking "Run"
@@ -743,7 +814,12 @@ export async function executeQueryAndValidate(
 
 export async function findDatasourceLink(page: Page, dsName: string): Promise<Locator> {
   await page.goto('http://localhost:3000/connections/datasources');
-  await page.waitForTimeout(1500);
+  // Wait for the datasource list to render (count() below has no auto-wait)
+  await page
+    .getByRole('link', { name: dsName })
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
 
   let dsLocator = page.getByRole('link', { name: dsName });
   if (!(await dsLocator.count())) {
@@ -760,17 +836,28 @@ export async function cleanupDashboard(page: Page, dashboardTitle: string) {
   const version = await getGrafanaVersion(page);
   log(`--> Grafana version detected: ${version}`);
   await page.goto('http://localhost:3000/dashboards');
-  await page.waitForTimeout(1000);
+  // Wait for the dashboard list to render (openDashboardByTitle relies on count())
+  await page
+    .getByText(dashboardTitle, { exact: true })
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
 
   await openDashboardByTitle(page, dashboardTitle);
   log(`--> Opened dashboard "${dashboardTitle}"`);
 
-  await page.waitForTimeout(1000);
+  // Wait for the dashboard view before entering edit mode (edit button lookup uses count())
+  await page
+    .locator('button[data-testid="data-testid Edit dashboard button"]')
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
 
   await openDashboardEdit(page);
 
   await clickDeleteDashboardButton(page, version);
-  await page.waitForTimeout(500);
+  // Deleting navigates back to the dashboard list
+  await page.waitForURL('**/dashboards**', { timeout: 10000 }).catch(() => {});
   log('--> Confirmed dashboard deletion');
 }
 
@@ -809,7 +896,6 @@ export async function FinalTestValidation(responses: Array<{ url: string; json: 
 export async function createNewDashboardAndSelectWarp10(page: Page) {
   //Click "Add visualization"
   await clickAddPanelButton(page);
-  await page.waitForTimeout(500);
   console.log('--> Clicked "Add visualization"');
 
   //Select the Warp10-Clever-Cloud datasource
@@ -870,6 +956,8 @@ export async function addConstantToDatasource(page: Page, dsName: string, constN
   await deleteDatasource(page, dsName);
   log('--> Navigating to new datasource creation');
   await page.goto('http://localhost:3000/connections/datasources/new');
+  // Let the SPA finish hydrating before interacting, otherwise clicks can land on inert elements
+  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
   await page.getByRole('button', { name: 'Warp10' }).click();
 
   log('--> Configuring basic settings');
@@ -880,11 +968,16 @@ export async function addConstantToDatasource(page: Page, dsName: string, constN
   await page.locator('#constant_name').fill(constName);
   await page.locator('#constant_value').fill(constValue);
   await page.locator('#btn_constant').click();
-  await page.waitForTimeout(1000);
 
   log('--> Saving datasource');
+  // Same flow as setupDatasource: the datasource already exists, "Save & test" issues a PUT
+  const saveResponse = page
+    .waitForResponse((res) => res.url().includes('/api/datasources') && res.request().method() === 'PUT', {
+      timeout: 15000,
+    })
+    .catch(() => null);
   await page.getByRole('button', { name: 'Save & test' }).click();
-  await page.waitForTimeout(1500);
+  await saveResponse;
 }
 
 export async function createDashboardAndRunQuery(
@@ -895,14 +988,17 @@ export async function createDashboardAndRunQuery(
 ) {
   log('--> Creating dashboard and panel');
   await page.goto('http://localhost:3000/dashboard/new');
-  await page.waitForTimeout(500);
+  // Wait for the new-dashboard toolbar; the helpers below look buttons up without auto-wait
+  await page
+    .getByTestId('data-testid Dashboard settings')
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
 
   await clickAddPanelButton(page);
-  await page.waitForTimeout(500);
 
   log('--> Selecting datasource');
   await page.getByText(dsName, { exact: true }).click();
-  await page.waitForTimeout(500);
 
   await page.locator('.query-editor-row textarea').fill(expr);
 
@@ -978,15 +1074,24 @@ export async function createNewPanel(page: Page, panelTitle = 'Test Editor JSON'
   // Step 1: Go to a new dashboard
   log('--> Navigating to a new dashboard');
   await goToNewDashboard(page);
-  await page.waitForTimeout(500);
 
   // Step 2: If "Edit" is needed, click it
   // Some Grafana versions require you to enter edit mode before adding a panel
   const editBtn = page.getByTestId('data-testid Edit dashboard button');
+  // count()/isVisible() below have no auto-wait, so let the dashboard view render first
+  await editBtn
+    .first()
+    .waitFor({ state: 'visible', timeout: 5000 })
+    .catch(() => {});
   if ((await editBtn.count()) > 0 && (await editBtn.first().isVisible())) {
     log('--> "Edit" button found, clicking it first');
     await editBtn.first().click();
-    await page.waitForTimeout(500);
+    // Wait for the edit-mode toolbar (the "Add" button lookup below uses count())
+    await page
+      .getByTestId('data-testid Add button')
+      .first()
+      .waitFor({ state: 'visible', timeout: 5000 })
+      .catch(() => {});
   } else {
     log('--> "Edit" button not present, proceeding directly to "Add"');
   }
@@ -1012,7 +1117,12 @@ export async function createNewPanel(page: Page, panelTitle = 'Test Editor JSON'
   const addVisBtn = page.getByTestId('data-testid Add new visualization menu item');
   await addVisBtn.first().waitFor({ state: 'visible', timeout: 3000 });
   await addVisBtn.first().click();
-  await page.waitForTimeout(1000);
+  // Wait for the panel editor to open (the title input lookup below uses count())
+  await page
+    .locator('input[data-testid="data-testid Panel editor option pane field input Title"]')
+    .first()
+    .waitFor({ state: 'visible', timeout: 5000 })
+    .catch(() => {});
 
   // Step 4: Fill panel title and query
   log('--> Setting panel title');
@@ -1047,11 +1157,9 @@ export async function createNewPanel(page: Page, panelTitle = 'Test Editor JSON'
     await option.first().waitFor({ state: 'visible', timeout: 5000 });
     await option.first().click();
     log('--> "Warp10-Clever-Cloud" selected as datasource');
-    await page.waitForTimeout(500);
   } else {
     log('--> No datasource picker found, skipping selection');
   }
-  await page.waitForTimeout(500);
 
   log('--> Filling query in editor');
   const editor = page.locator('.query-editor-row textarea').first();
@@ -1063,21 +1171,24 @@ export async function createNewPanel(page: Page, panelTitle = 'Test Editor JSON'
   const refreshButton = page.getByTestId('data-testid RefreshPicker run button');
   await refreshButton.first().waitFor({ state: 'visible', timeout: 3000 });
   await refreshButton.first().click();
-  await page.waitForTimeout(500);
 
   // Step 6: Save panel and dashboard
   log('--> Saving panel/dashboard');
   const saveBtn = page.getByRole('button', { name: 'Save' });
   await saveBtn.first().waitFor({ state: 'visible', timeout: 3000 });
   await saveBtn.first().click();
-  await page.waitForTimeout(500);
+  // Wait for the save drawer to open before extracting the JSON model
+  await page
+    .getByTestId('data-testid Drawer close')
+    .first()
+    .waitFor({ state: 'visible', timeout: 5000 })
+    .catch(() => {});
 
   // Step 7: Extract JSON model from editor (Monaco or legacy)
   log('--> Extracting JSON model');
   const jsonContent = await getPanelJsonModel(page);
   log('--> JSON content retrieved:');
   log(jsonContent);
-  await page.waitForTimeout(500);
 
   // Step 8: Cleanup UI (close drawer, discard, confirm)
   log('--> Cleaning up: closing JSON drawer');
@@ -1085,14 +1196,20 @@ export async function createNewPanel(page: Page, panelTitle = 'Test Editor JSON'
   if ((await exitSave.count()) > 0 && (await exitSave.first().isVisible())) {
     log('--> Drawer close button found via data-testid');
     await exitSave.first().click();
-    await page.waitForTimeout(500);
+    await exitSave
+      .first()
+      .waitFor({ state: 'hidden', timeout: 5000 })
+      .catch(() => {});
   } else {
     log('--> Drawer close button not found via data-testid, trying aria-label fallback');
     const closeBtn = page.locator('button[aria-label="Drawer close"]');
     if ((await closeBtn.count()) > 0 && (await closeBtn.first().isVisible())) {
       log('--> Drawer close button found via aria-label');
       await closeBtn.first().click();
-      await page.waitForTimeout(500);
+      await closeBtn
+        .first()
+        .waitFor({ state: 'hidden', timeout: 5000 })
+        .catch(() => {});
     } else {
       log('--> Drawer close button not found by any known selector. Skipping.');
     }
@@ -1151,26 +1268,31 @@ function searchObject(obj: any, key: string, value: string): boolean {
 }
 
 export async function getPanelJsonModel(page: Page): Promise<string> {
-  // Try Monaco editor (used in recent Grafana versions) first.
-  const monacoContent = await page.evaluate(() => {
-    // @ts-ignore
-    return window.monaco?.editor?.getEditors?.()[0]?.getValue?.() ?? '';
-  });
-  if (monacoContent && monacoContent.trim().startsWith('{')) {
-    log('--> JSON model found in Monaco editor');
-    return monacoContent;
-  }
-  // List of known textarea selectors for the JSON model
-  const selectors = ['textarea.css-rn6xsd', 'textarea.css-1q116cm', 'textarea.css-ch361'];
-  for (const selector of selectors) {
-    const textarea = page.locator(selector);
-    if (await textarea.count()) {
-      const value = await textarea.inputValue();
-      if (value && value.trim().startsWith('{')) {
-        log(`--> JSON model found in textarea: ${selector}`);
-        return value;
+  // The JSON drawer renders asynchronously, so poll the known sources for a while
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    // Try Monaco editor (used in recent Grafana versions) first.
+    const monacoContent = await page.evaluate(() => {
+      // @ts-ignore
+      return window.monaco?.editor?.getEditors?.()[0]?.getValue?.() ?? '';
+    });
+    if (monacoContent && monacoContent.trim().startsWith('{')) {
+      log('--> JSON model found in Monaco editor');
+      return monacoContent;
+    }
+    // List of known textarea selectors for the JSON model
+    const selectors = ['textarea.css-rn6xsd', 'textarea.css-1q116cm', 'textarea.css-ch361'];
+    for (const selector of selectors) {
+      const textarea = page.locator(selector);
+      if (await textarea.count()) {
+        const value = await textarea.inputValue();
+        if (value && value.trim().startsWith('{')) {
+          log(`--> JSON model found in textarea: ${selector}`);
+          return value;
+        }
       }
     }
+    await page.waitForTimeout(250);
   }
   throw new Error('Could not extract JSON model from panel editor using any known selector!');
 }
@@ -1188,7 +1310,6 @@ export async function clickEditButton(page: Page) {
 
 export async function clickEditPanelButton(page: Page, panelTitle: string) {
   await page.locator(`button[title="Menu"][data-testid="data-testid Panel menu ${panelTitle}"]`).click();
-  await page.waitForTimeout(defaultTimeout);
   await page.locator(`[data-testid="data-testid Panel menu item Edit"]`).click();
 }
 
@@ -1211,7 +1332,7 @@ export async function fillPairAndClickAdd({
 }) {
   log(`--> Filling ${label} name`);
   await nameInput.pressSequentially(name);
-  await page.waitForTimeout(500);
+  await expect(nameInput).toHaveValue(name);
   const actualName = await nameInput.inputValue();
   log(`--> ${label} Name value after typing: "${actualName}"`);
   if (actualName === name) {
@@ -1220,7 +1341,7 @@ export async function fillPairAndClickAdd({
 
   log(`--> Filling ${label} value`);
   await valueInput.pressSequentially(value);
-  await page.waitForTimeout(500);
+  await expect(valueInput).toHaveValue(value);
   const actualValue = await valueInput.inputValue();
   log(`--> ${label} Value after typing: "${actualValue}"`);
   if (actualValue === value) {
@@ -1230,7 +1351,6 @@ export async function fillPairAndClickAdd({
   if (addButton) {
     log(`--> Clicking ${label} Add button...`);
     await addButton.click();
-    await page.waitForTimeout(1000);
   }
 }
 

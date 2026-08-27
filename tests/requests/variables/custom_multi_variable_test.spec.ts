@@ -71,6 +71,5 @@ test('Multi-value custom variable substitution', async ({ page }) => {
   log('--> Multi-value custom variable substitution verified');
   await deleteDatasource(page, dsName);
   await cleanupDashboard(page, dashboardTitle);
-  await page.waitForTimeout(500);
   log('--> Test Ended successfully');
 });

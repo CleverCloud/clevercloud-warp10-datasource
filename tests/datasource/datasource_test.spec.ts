@@ -62,7 +62,8 @@ test('Datasource: test all fields in datasource config + healthcheck', async ({ 
   // Create datasource
   log('--> Navigating to data sources page...');
   await page.goto(`http://localhost:3000${dsPath}`);
-  await page.waitForTimeout(1000);
+  // Let the SPA finish hydrating before interacting, otherwise clicks can land on inert elements
+  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
   await page.getByRole('button', { name: 'Warp10' }).click();
 
@@ -79,13 +80,17 @@ test('Datasource: test all fields in datasource config + healthcheck', async ({ 
   log(`--> URL input filled with: ${currentValue}`);
 
   log('--> Saving datasource to trigger healthcheck...');
+  let healthRespPromise = page
+    .waitForResponse((res) => res.url().includes('/api/datasources') && res.url().includes('/health'), {
+      timeout: 15000,
+    })
+    .catch(() => null);
   if (saveButton.type === 'role') {
     await page.getByRole('button', { name: saveButton.name }).click();
   } else {
     await page.getByTestId(saveButton.name).click();
   }
-
-  await page.waitForTimeout(1000);
+  await healthRespPromise;
 
   if (healthResponse) {
     log(`--> Health check passed with status: ${healthResponse.status} — ${healthResponse.message}`);
@@ -94,19 +99,31 @@ test('Datasource: test all fields in datasource config + healthcheck', async ({ 
   }
 
   log('--> Saving datasource (access=proxy)...');
-  await page.getByRole('button', { name: saveButton.name }).click();
-  await page.waitForTimeout(5000);
-
-  try {
-    const alert = page.locator('[data-testid="data-testid Alert success"]');
-    await expect(alert).toBeVisible({ timeout: 3000 });
-    const alertTextProxy = (await alert.textContent())?.trim() || '';
-    log(`--> Access=proxy: alert shown: "${alertTextProxy}"`);
-    expect(alertTextProxy.toLowerCase()).toContain('working');
-  } catch {
-    log('--> Expected success alert not shown after switching to proxy');
-    throw new Error('Expected success alert for access=proxy');
+  // The save can race against the earlier invalid-URL save (the PUT then 409s and no health
+  // check fires), so retry the save until a health response actually comes back and assert
+  // on its payload — more reliable than the transient success alert.
+  let proxyHealth: any = null;
+  for (let attempt = 0; attempt < 3 && !proxyHealth; attempt++) {
+    // The form re-renders after the previous save and can revert the URL field to the
+    // invalid value, so re-fill it on every attempt before saving
+    await urlInput.fill('http://warp10:8080');
+    await expect(urlInput).toHaveValue('http://warp10:8080');
+    const respPromise = page
+      .waitForResponse((res) => res.url().includes('/api/datasources') && res.url().includes('/health'), {
+        timeout: 10000,
+      })
+      .catch(() => null);
+    await page.getByRole('button', { name: saveButton.name }).click();
+    const resp = await respPromise;
+    proxyHealth = resp ? await resp.json().catch(() => null) : null;
+    if (proxyHealth && String(proxyHealth.status).toLowerCase() === 'error') {
+      log(`--> Attempt ${attempt + 1}: health still failing (${proxyHealth.message}), retrying`);
+      proxyHealth = null;
+    }
   }
+  log(`--> Access=proxy: health response: ${JSON.stringify(proxyHealth)}`);
+  expect(proxyHealth).not.toBeNull();
+  expect(['success', 'ok']).toContain(String(proxyHealth.status).toLowerCase());
 
   // Test constants/macros addition
   log('--> Filling and applying constants and macros');
@@ -132,18 +149,21 @@ test('Datasource: test all fields in datasource config + healthcheck', async ({ 
   });
 
   log('--> Saving again after adding constants/macros...');
+  healthRespPromise = page
+    .waitForResponse((res) => res.url().includes('/api/datasources') && res.url().includes('/health'), {
+      timeout: 15000,
+    })
+    .catch(() => null);
   if (saveButton.type === 'role') {
     await page.getByRole('button', { name: saveButton.name }).click();
   } else {
     await page.getByTestId(saveButton.name).click();
   }
-
-  await page.waitForTimeout(1000);
+  await healthRespPromise;
 
   // Refresh and verify values
   log('--> Refreshing page to verify saved values...');
   await page.reload();
-  await page.waitForTimeout(2000);
 
   await logVisibility(page, 'test_constant');
   await logVisibility(page, 'test_constant_value');

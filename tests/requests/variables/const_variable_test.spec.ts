@@ -76,6 +76,5 @@ test('Single constant substitution (Datasource constant)', async ({ page }) => {
   log('--> Single constant substitution verified');
   await deleteDatasource(page, dsName);
   await cleanupDashboard(page, dashboardTitle);
-  await page.waitForTimeout(500);
   log('--> Test Ended successfully');
 });

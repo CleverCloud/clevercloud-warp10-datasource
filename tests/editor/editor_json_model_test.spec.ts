@@ -48,8 +48,12 @@ test('Editor JSON Model test: Warp10 JSON Model Verification', async ({ page }) 
   log(`--> Detected Grafana version: ${version}`);
 
   await page.goto('http://localhost:3000/dashboards');
-  await page.waitForTimeout(1000);
+  // createNewPanel navigates via goToNewDashboard, which relies on count() (no auto-wait)
+  await page
+    .getByRole('link', { name: 'New dashboard' })
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
   await createNewPanel(page);
-  await page.waitForTimeout(1000);
   log('--> Query Editor JSON model Test completed!');
 });

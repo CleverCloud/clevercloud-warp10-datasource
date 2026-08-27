@@ -42,15 +42,26 @@ test('Healthcheck in proxy and direct modes', async ({ page }) => {
   // Create datasource in proxy mode
   log('--> Navigating to data sources page...');
   await page.goto(`http://localhost:3000${dsPath}`);
-  await page.waitForTimeout(1000);
+  // Let the SPA finish hydrating before interacting, otherwise clicks can land on inert elements
+  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
 
   await page.getByRole('button', { name: 'Warp10' }).click();
   await page.fill('#basic-settings-name', 'test_health_warp10');
   await page.fill('#url', 'http://warp10:8080');
 
   log('--> Saving datasource in proxy mode...');
+  let healthRespPromise = page
+    .waitForResponse((res) => res.url().includes('/api/datasources') && res.url().includes('/health'), {
+      timeout: 15000,
+    })
+    .catch(() => null);
   await page.getByRole('button', { name: saveButton.name }).click();
-  await page.waitForTimeout(1000);
+  // The page.on('response') listener parses the body asynchronously and may not have run yet,
+  // so read the health payload straight from the awaited response
+  const proxyHealthResp = await healthRespPromise;
+  if (!healthResponse && proxyHealthResp) {
+    healthResponse = await proxyHealthResp.json().catch(() => null);
+  }
 
   if (healthResponse) {
     log(`--> [proxy] Health check: ${healthResponse.status} — ${healthResponse.message}`);
@@ -61,16 +72,24 @@ test('Healthcheck in proxy and direct modes', async ({ page }) => {
 
   log('--> Saving datasource again (proxy mode)...');
   healthResponse = null;
+  healthRespPromise = page
+    .waitForResponse((res) => res.url().includes('/api/datasources') && res.url().includes('/health'), {
+      timeout: 15000,
+    })
+    .catch(() => null);
   await page.getByRole('button', { name: saveButton.name }).click();
-  await page.waitForTimeout(3000);
+  await healthRespPromise;
 
   try {
-    const alert = page.locator('[data-testid="data-testid Alert success"]');
-    await expect(alert).toBeVisible({ timeout: 3000 });
+    // Several success alerts can stack up (the "updated" toast plus one per health check),
+    // so target the health-check one by its text and tolerate duplicates
+    const alert = page.locator('[data-testid="data-testid Alert success"]').filter({ hasText: /working/i }).first();
+    await expect(alert).toBeVisible({ timeout: 15000 });
     const alertTextProxy = (await alert.textContent())?.trim() || '';
     log(`--> [proxy] Alert: "${alertTextProxy}"`);
     expect(alertTextProxy.toLowerCase()).toContain('working');
-  } catch {
+  } catch (e) {
+    log(`--> [proxy] success alert failure: ${(e as Error).message}`);
     throw new Error('Expected success alert for access=proxy (after switching back)');
   }
 

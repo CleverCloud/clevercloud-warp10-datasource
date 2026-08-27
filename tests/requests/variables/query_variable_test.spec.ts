@@ -56,6 +56,5 @@ test('Single variable substitution (Query type)', async ({ page }) => {
   log('--> Single variable substitution verified');
   await deleteDatasource(page, dsName);
   await cleanupDashboard(page, dashboardTitle);
-  await page.waitForTimeout(500);
   log('--> Test Ended successfully');
 });

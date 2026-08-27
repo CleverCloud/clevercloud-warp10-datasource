@@ -30,6 +30,8 @@ const pluginE2eAuth = `${dirname(require.resolve('@grafana/plugin-e2e'))}/auth`;
  */
 export default defineConfig<PluginOptions>({
   testDir: './tests',
+  /* Full e2e journeys (datasource + dashboard + query) need more than the 30s default under a parallel run */
+  timeout: 60000,
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */

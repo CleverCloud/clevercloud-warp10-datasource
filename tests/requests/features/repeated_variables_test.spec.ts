@@ -39,12 +39,16 @@ test.describe('Repeated Variables Feature', () => {
 
     // Navigate to the dashboard
     await page.goto(`${GRAFANA_HOST}/dashboards`);
-    await page.waitForTimeout(PLAYWRIGHT_TIMEOUT);
+    // goToDashboard relies on count() (no auto-wait), so let the dashboard list render first
+    await page
+      .getByText('Test repeated vars', { exact: true })
+      .first()
+      .waitFor({ state: 'visible', timeout: PLAYWRIGHT_TIMEOUT })
+      .catch(() => {});
     await goToDashboard(page, 'Test repeated vars');
 
-    // ---- Verify the payloads, wait for the requests
-    await page.waitForTimeout(PLAYWRIGHT_TIMEOUT);
-    expect(responses.length).toBe(4);
+    // ---- Verify the payloads: the dashboard fires one query per repeated panel
+    await expect.poll(() => responses.length, { timeout: 15000 }).toBe(4);
 
     // Check each response for the expected WarpScript values
     responses.map((response) => {
