@@ -3,11 +3,10 @@
  * @description End-to-end test for a basic usage scenario.
  * This test covers the full flow of creating a Warp10 datasource, creating a dashboard,
  * selecting the datasource, injecting a basic query, and validating a successful response.
- * sometimes delays added are extremely important for the page to load as it should so we shouldn't try to modify or decrease it
  *
  * Scope: scenario (integration)
  */
-import { test } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { log, getGrafanaVersion, clickAddPanelButton, FinalTestValidation, testDatasourceInvalidURL } from '../utils';
 
 // Main test scenario
@@ -67,13 +66,13 @@ test('Basic scenario: Create DS, Dashboard, Select Datasource, Get Warp10 Respon
   // === Step 1: Create datasource ===
   log('--> Creating new Warp10 datasource');
   await page.goto(`http://localhost:3000${basePath}`);
-  await page.waitForTimeout(2000);
+  // Let the SPA finish hydrating before interacting, otherwise clicks can land on inert elements
+  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
   await page.getByRole('button', { name: 'Warp10' }).click();
-  await page.waitForTimeout(2000);
 
   // Fill datasource config
   log('--> Filling datasource config');
-  await page.fill('#basic-settings-name', 'test_warp10');
+  await page.fill('#basic-settings-name', 'test_warp10_scenario');
 
   // Fill invalid URL first and test error
   log('--> Attempting to save and test datasource with invalid URL...');
@@ -88,10 +87,13 @@ test('Basic scenario: Create DS, Dashboard, Select Datasource, Get Warp10 Respon
 
   // Save and test
   log('--> Saving and testing datasource...');
-  await page.waitForTimeout(1000);
-
+  const healthRespPromise = page
+    .waitForResponse((res) => res.url().includes('/api/datasources') && res.url().includes('/health'), {
+      timeout: 15000,
+    })
+    .catch(() => null);
   await page.getByRole('button', { name: saveButtonName }).click();
-  await page.waitForTimeout(1000);
+  await healthRespPromise;
 
   if (healthResponse) {
     log(`--> Health check passed: ${healthResponse.message}`);
@@ -102,22 +104,32 @@ test('Basic scenario: Create DS, Dashboard, Select Datasource, Get Warp10 Respon
   // === Step 2: Build dashboard ===
   log('--> Opening dashboard creation wizard');
   await page.getByRole('link', { name: 'Build a dashboard' }).click();
-  await page.waitForTimeout(1000);
+  // clickAddPanelButton looks the button up with $() (no auto-wait), so let the page render first
+  await page
+    .getByTestId('data-testid Create new panel button')
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
 
   log('--> Creating new panel');
   await clickAddPanelButton(page);
-  await page.waitForTimeout(1000);
 
   log('--> Selecting created datasource');
-  await page.locator('[data-testid="data-source-card"] span', { hasText: 'test_warp10' }).click();
-  await page.waitForTimeout(1000);
+  await page.locator('[data-testid="data-source-card"] span', { hasText: 'test_warp10_scenario' }).click();
 
   log('--> Injecting Warp10 query into editor');
   await page.locator('.query-editor-row textarea').first().fill('1 2 +');
 
   log('--> Triggering query execution');
+  const queryRespPromise = page
+    .waitForResponse((res) => res.url().includes('/api/ds/query') && res.request().method() === 'POST', {
+      timeout: 15000,
+    })
+    .catch(() => null);
   await page.getByTestId('data-testid RefreshPicker run button').click();
-  await page.waitForTimeout(1000);
+  await queryRespPromise;
+  // The response listener parses the body asynchronously, wait until it lands in `responses`
+  await expect.poll(() => responses.length, { timeout: 15000 }).toBeGreaterThan(0);
 
   // === Step 3: Validate results ===
   log('--> Validating last query response...');
@@ -126,8 +138,7 @@ test('Basic scenario: Create DS, Dashboard, Select Datasource, Get Warp10 Respon
   // === Step 4: Cleanup (delete DS) ===
   log('--> Navigating to datasource management page');
   await page.goto(`http://localhost:3000${myDsPath}`);
-  await page.getByRole('link', { name: 'test_warp10' }).click();
-  await page.waitForTimeout(1000);
+  await page.getByRole('link', { name: 'test_warp10_scenario' }).click();
 
   log('--> Deleting datasource...');
   await deleteButton.click();

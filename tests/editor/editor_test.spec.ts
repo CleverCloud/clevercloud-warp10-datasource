@@ -7,7 +7,7 @@
  * Scope: editor (query editor rendering and behavior)
  */
 import { test, expect } from '@playwright/test';
-import { log, getGrafanaVersion, goToNewDashboard, clickEditPanelButton, defaultTimeout } from '../utils';
+import { log, getGrafanaVersion, goToNewDashboard, clickEditPanelButton } from '../utils';
 
 // Editor JSON Model Validation
 test('Editor: test all features in request editor component', async ({ page }) => {
@@ -44,12 +44,15 @@ test('Editor: test all features in request editor component', async ({ page }) =
   log(`--> Detected Grafana version: ${version}`);
 
   await page.goto('http://localhost:3000/dashboards');
-  await page.waitForTimeout(defaultTimeout);
+  // goToNewDashboard relies on count() (no auto-wait), so let the dashboard list render first
+  await page
+    .getByRole('link', { name: 'New dashboard' })
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
   await goToNewDashboard(page);
-  await page.waitForTimeout(defaultTimeout);
 
   await clickEditPanelButton(page, 'Graph Example');
-  await page.waitForTimeout(defaultTimeout);
 
   // Wait for editor
   log('--> Waiting for query editor...');
@@ -59,16 +62,7 @@ test('Editor: test all features in request editor component', async ({ page }) =
   log('--> Editor is visible and attached');
 
   // Verify responses
-
-  await page.waitForTimeout(defaultTimeout);
-  for (let i = 0; i < 10; i++) {
-    if (responses.length > 0) {
-      break;
-    }
-    await page.waitForTimeout(defaultTimeout);
-  }
-
-  expect(responses.length).toBeGreaterThan(0);
+  await expect.poll(() => responses.length, { timeout: 30000 }).toBeGreaterThan(0);
   log(`--> ${responses.length} query response(s) captured`);
 
   for (let index = 0; index < responses.length; index++) {

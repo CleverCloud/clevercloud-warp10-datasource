@@ -57,6 +57,5 @@ test('Interval variable substitution works', async ({ page }) => {
 
   await deleteDatasource(page, dsName);
   await cleanupDashboard(page, dashboardTitle);
-  await page.waitForTimeout(500);
   log('--> Test Ended successfully');
 });
