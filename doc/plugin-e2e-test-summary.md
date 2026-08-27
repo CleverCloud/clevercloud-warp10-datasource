@@ -118,7 +118,7 @@ warp.token.mytoken = {
        - [query_variable_test.spec.ts](tests/requests/variables/query_variable_test.spec.ts)
        - [custom_multi_variable_test.spec.ts](tests/requests/variables/custom_multi_variable_test.spec.ts)
     - __scenario_
-       - [senario.spec.ts](tests/scenario/senario.spec.ts)
+       - [scenario.spec.ts](tests/scenario/scenario.spec.ts)
     - [utils.ts](tests/utils.ts)
 
 
