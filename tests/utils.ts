@@ -1260,7 +1260,9 @@ export async function testDatasourceInvalidURL(
     await page.getByTestId(saveButton.name).click();
   }
   const alertSelector = page.locator('[data-testid="data-testid Alert info"]');
-  await expect(alertSelector).toBeVisible({ timeout: 3000 });
+  // Health check goes through the backend plugin; under a fully parallel run it
+  // can take well over 3s to come back, so give it a generous timeout.
+  await expect(alertSelector).toBeVisible({ timeout: 15000 });
   const alertText = await alertSelector.textContent();
   expect(alertText).toContain('connect: connection refused');
 }
