@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	l "github.com/grafana/grafana-plugin-sdk-go/backend/log"
@@ -18,10 +19,22 @@ import (
 
 var ds Datasource
 
+// skipIfShort marks docker-dependent integration tests as skipped under `go test -short`.
+func skipIfShort(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test: requires docker, skipped with -short")
+	}
+}
+
 func TestMain(m *testing.M) {
+	flag.Parse()
+	if testing.Short() {
+		// -short: run only the pure unit tests, without starting the Warp10 container.
+		os.Exit(m.Run())
+	}
 	ctx := context.Background()
 	req := testcontainers.ContainerRequest{
-		Image:        "warp10io/warp10:3.4.1-alpine",
+		Image:        "warp10io/warp10:3.5.0-alpine",
 		ExposedPorts: []string{"8080/tcp", "8081/tcp"},
 		WaitingFor: wait.ForHTTP("/api/v0/exec").
 			WithStartupTimeout(60 * time.Second).
@@ -56,6 +69,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestTableResultQuery(t *testing.T) {
+	skipIfShort(t)
 	wsQuery := `{
 		"expr": "{ 'columns' [ { 'text' 'columnA' 'type' 'number' 'sort' true 'desc' true } { 'text' 'columnB' 'type' 'number' } ] 'rows' [ [ 10 20 ] [ 100 200 ] [ 100 200 ] [ 100 200 ] [ 100 200 ] [ 100 200 ] [ 100 200 ] [ 100 200 ] ] }"
 	}`
@@ -102,6 +116,7 @@ func TestTableResultQuery(t *testing.T) {
 }
 
 func TestGTSListQuery(t *testing.T) {
+	skipIfShort(t)
 	wsQuery := `{
 		"expr": "[ { 'c' 'testClass' 'l' {} 'a' {} 'v' [ [ 1619784000000000 42.5 ] [ 1619784001000000 43.2 ] ] } ]"
 	}`
@@ -147,6 +162,7 @@ func TestGTSListQuery(t *testing.T) {
 }
 
 func TestArrayQuery(t *testing.T) {
+	skipIfShort(t)
 	wsQuery := `{
 		"expr": "[ 42.5 43.2 44.1 ]"
 	}`
@@ -192,6 +208,7 @@ func TestArrayQuery(t *testing.T) {
 }
 
 func TestScalarQuery(t *testing.T) {
+	skipIfShort(t)
 	wsQuery := `{
 		"expr": "42"
 	}`
