@@ -8,7 +8,7 @@
  * the test failed before reaching its own UI cleanup. This keeps a failed run
  * from leaking state that breaks the next one.
  */
-import { test as base, expect } from '@playwright/test';
+import { test as base, expect } from '@grafana/plugin-e2e';
 
 const GRAFANA_URL = process.env.GRAFANA_URL || 'http://localhost:3000';
 const AUTH = 'Basic ' + Buffer.from('admin:admin').toString('base64');
@@ -51,7 +51,31 @@ async function api(method: string, path: string): Promise<any> {
   }
 }
 
-export const test = base.extend<{ autoCleanup: void }>({
+type ConstProp = { name: string; value: string };
+
+export const test = base.extend<{
+  autoCleanup: void;
+  /**
+   * Creates a Warp10 datasource through the Grafana API instead of driving the
+   * config UI. Feature specs (variables, constants, macros) use this: the UI
+   * creation flow itself stays covered by the dedicated datasource/health/scenario
+   * specs, and API setup removes both the time cost and the hydration flakes.
+   */
+  createWarp10Datasource: (name: string, opts?: { const?: ConstProp[]; macro?: ConstProp[] }) => Promise<void>;
+}>({
+  createWarp10Datasource: async ({ createDataSource }, use) => {
+    await use(async (name, opts = {}) => {
+      registerDatasource(name);
+      const url = process.env.WARP10_URL || 'http://warp10:8080';
+      await createDataSource({
+        type: 'clevercloud-warp10-datasource',
+        name,
+        access: 'proxy',
+        url,
+        jsonData: { path: url, const: opts.const ?? [], macro: opts.macro ?? [] },
+      });
+    });
+  },
   autoCleanup: [
     async ({}, use) => {
       await use();

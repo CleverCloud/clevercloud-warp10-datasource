@@ -11,15 +11,14 @@
  * Scope: constants (positive test)
  */
 import { test, uniqueName } from '../../fixtures';
-import { addConstantToDatasource, deleteDatasource, createDashboardAndRunQuery } from '../../utils';
+import { createDashboardAndRunQuery } from '../../utils';
 
 // === TEST: Valid constant ===
-test('Test: Warp10 constant is correctly injected and used in payload', async ({ page }) => {
+test('Test: Warp10 constant is correctly injected and used in payload', async ({ page, createWarp10Datasource }) => {
   const dsName = uniqueName('ds_constant_test');
   const constName = 'offset';
   const constValue = '3000';
 
-  await addConstantToDatasource(page, dsName, constName, constValue);
+  await createWarp10Datasource(dsName, { const: [{ name: constName, value: constValue }] });
   await createDashboardAndRunQuery(page, dsName, `NOW $${constName} +`, { returnResponse: true });
-  await deleteDatasource(page, dsName);
 });

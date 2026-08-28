@@ -11,24 +11,22 @@
 
 import {
   log,
-  setupDatasource,
   createDashboardWithQueryVariable,
   executeQueryAndCapturePayload,
   cleanupDashboard,
-  deleteDatasource,
 } from '../../utils';
 import { test, expect, uniqueName } from '../../fixtures';
 
 // === TEST ===
 
-test('Single variable substitution (Query type)', async ({ page }) => {
+test('Single variable substitution (Query type)', async ({ page, createWarp10Datasource }) => {
   const dsName = uniqueName('ds_var_test_single');
   const varName = 'queryval';
   const varQuery = '10 20 +';
   const dashboardTitle = uniqueName('SingleVariableDashboard');
 
   log('--> Starting Single variable substitution test');
-  await setupDatasource(page, dsName);
+  await createWarp10Datasource(dsName);
   await createDashboardWithQueryVariable(page, dsName, varName, varQuery, dashboardTitle);
 
   // Use the variable in a Warp10 query
@@ -54,7 +52,6 @@ test('Single variable substitution (Query type)', async ({ page }) => {
   log('--> OK: Variable reference "$queryval" found in expr');
 
   log('--> Single variable substitution verified');
-  await deleteDatasource(page, dsName);
   await cleanupDashboard(page, dashboardTitle);
   log('--> Test Ended successfully');
 });
