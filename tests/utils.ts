@@ -149,6 +149,18 @@ export async function clickAddPanelButton(page: Page) {
     'button:has-text("Add visualization")',
   ];
 
+  const probe = async () => {
+    for (const sel of selectors) {
+      const el = await page.$(sel);
+      if (el) {
+        await el.click();
+        log(`--> Clicked Add Panel button with selector: ${sel}`);
+        return true;
+      }
+    }
+    return false;
+  };
+
   // page.$() has no auto-wait, so first wait for any candidate to render
   // (the dashboard page can take a while to hydrate on a loaded machine)
   await page
@@ -156,12 +168,29 @@ export async function clickAddPanelButton(page: Page) {
     .first()
     .waitFor({ state: 'visible', timeout: 15000 })
     .catch(() => {});
+  if (await probe()) {
+    return;
+  }
 
-  for (const sel of selectors) {
-    const el = await page.$(sel);
-    if (el) {
-      await el.click();
-      log(`--> Clicked Add Panel button with selector: ${sel}`);
+  // A freshly saved dashboard lands in view mode, where no add-panel button exists —
+  // enter edit mode and retry (count() has no auto-wait, so let the toolbar render first)
+  const editBtn = page.locator('button[data-testid="data-testid Edit dashboard button"]');
+  await editBtn
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
+  if (await editBtn.count()) {
+    await editBtn
+      .first()
+      .click({ timeout: 5000 })
+      .catch(() => {});
+    log('--> Clicked "Edit dashboard" before adding panel');
+    await page
+      .locator(selectors.join(', '))
+      .first()
+      .waitFor({ state: 'visible', timeout: 10000 })
+      .catch(() => {});
+    if (await probe()) {
       return;
     }
   }
@@ -968,7 +997,13 @@ export async function deleteDatasource(
     // Confirm deletion, handling both testId and text cases
     const confirmBtn = page.getByTestId('data-testid Confirm Modal Danger Button');
     if (await confirmBtn.count()) {
-      await confirmBtn.click();
+      // On a loaded machine the modal animation can keep the button "unstable" forever,
+      // hanging a plain click until the test timeout — bound it and fall back to a forced click
+      try {
+        await confirmBtn.click({ timeout: 10000 });
+      } catch {
+        await confirmBtn.click({ force: true, timeout: 5000 }).catch(() => {});
+      }
       log('--> Confirmed datasource deletion');
     } else {
       const altConfirm = page.locator('button:has-text("Delete")');
