@@ -4,7 +4,7 @@
  * Scope: backend health only
  */
 import { test, expect, registerDatasource } from '../fixtures';
-import { log, getGrafanaVersion, openNewWarp10Datasource } from '../utils';
+import { log, getGrafanaVersion, openNewWarp10Datasource, waitForHealthCheckResponse } from '../utils';
 
 // Test healthcheck in proxy and direct modes only
 test('Healthcheck in proxy and direct modes', async ({ page }) => {
@@ -34,10 +34,6 @@ test('Healthcheck in proxy and direct modes', async ({ page }) => {
   // Setup
   const version = await getGrafanaVersion(page);
   log(`--> Detected Grafana version: ${version}`);
-  const saveButton = { type: 'role', name: 'Save & test' };
-  const deleteButton = { type: 'testId', name: 'Data source settings page Delete button' };
-  const confirmButton = { type: 'testId', name: 'data-testid Confirm Modal Danger Button' };
-
   // Create datasource in proxy mode
   log('--> Navigating to data sources page...');
   await openNewWarp10Datasource(page);
@@ -46,12 +42,8 @@ test('Healthcheck in proxy and direct modes', async ({ page }) => {
   await page.fill('#url', 'http://warp10:8080');
 
   log('--> Saving datasource in proxy mode...');
-  let healthRespPromise = page
-    .waitForResponse((res) => res.url().includes('/api/datasources') && res.url().includes('/health'), {
-      timeout: 15000,
-    })
-    .catch(() => null);
-  await page.getByRole('button', { name: saveButton.name }).click();
+  let healthRespPromise = waitForHealthCheckResponse(page);
+  await page.getByRole('button', { name: 'Save & test' }).click();
   // The page.on('response') listener parses the body asynchronously and may not have run yet,
   // so read the health payload straight from the awaited response
   const proxyHealthResp = await healthRespPromise;
@@ -68,12 +60,8 @@ test('Healthcheck in proxy and direct modes', async ({ page }) => {
 
   log('--> Saving datasource again (proxy mode)...');
   healthResponse = null;
-  healthRespPromise = page
-    .waitForResponse((res) => res.url().includes('/api/datasources') && res.url().includes('/health'), {
-      timeout: 15000,
-    })
-    .catch(() => null);
-  await page.getByRole('button', { name: saveButton.name }).click();
+  healthRespPromise = waitForHealthCheckResponse(page);
+  await page.getByRole('button', { name: 'Save & test' }).click();
   await healthRespPromise;
 
   try {
@@ -91,7 +79,7 @@ test('Healthcheck in proxy and direct modes', async ({ page }) => {
 
   // Cleanup
   log('--> Deleting datasource...');
-  await page.getByTestId(deleteButton.name).click();
-  await page.getByTestId(confirmButton.name).click();
+  await page.getByTestId('Data source settings page Delete button').click();
+  await page.getByTestId('data-testid Confirm Modal Danger Button').click();
   log('--> Datasource deleted. Healthcheck-only test completed!');
 });

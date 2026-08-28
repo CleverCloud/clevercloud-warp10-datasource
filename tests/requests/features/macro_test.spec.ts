@@ -16,12 +16,6 @@ test('macros: Warp10 macro definition and usage (positive and negative)', async 
   const version = await getGrafanaVersion(page);
   log(`--> Detected Grafana version: ${version}`);
   await page.goto('http://localhost:3000/dashboards');
-  // goToNewDashboard relies on count() (no auto-wait), so let the dashboard list render first
-  await page
-    .getByRole('link', { name: 'New dashboard' })
-    .first()
-    .waitFor({ state: 'visible', timeout: 10000 })
-    .catch(() => {});
   await goToNewDashboard(page);
 
   await clickEditPanelButton(page, 'Graph Example');

@@ -44,12 +44,6 @@ test('Editor: test all features in request editor component', async ({ page }) =
   log(`--> Detected Grafana version: ${version}`);
 
   await page.goto('http://localhost:3000/dashboards');
-  // goToNewDashboard relies on count() (no auto-wait), so let the dashboard list render first
-  await page
-    .getByRole('link', { name: 'New dashboard' })
-    .first()
-    .waitFor({ state: 'visible', timeout: 10000 })
-    .catch(() => {});
   await goToNewDashboard(page);
 
   await clickEditPanelButton(page, 'Graph Example');

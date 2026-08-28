@@ -18,15 +18,14 @@ export async function getGrafanaVersion(page: Page): Promise<string> {
 
 async function openDashboardEdit(page: Page) {
   const editBtn = page.locator('button[data-testid="data-testid Edit dashboard button"]');
+  // count() has no auto-wait — let the dashboard toolbar render first
+  await editBtn
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
   if ((await editBtn.count()) && (await editBtn.first().isVisible())) {
     await editBtn.first().click();
     log('--> Clicked "Edit dashboard"');
-    // Wait for the edit UI to load; the settings lookup below relies on count() so it needs the button rendered
-    await page
-      .getByTestId('data-testid Dashboard settings')
-      .first()
-      .waitFor({ state: 'visible', timeout: 5000 })
-      .catch(() => {});
   } else {
     log('--> Edit button not found or not visible (maybe already in edit mode or old Grafana version)');
   }
@@ -68,6 +67,15 @@ async function isInDashboardSettings(page: Page) {
 
 async function clickDashboardSettingsButton(page: Page) {
   log('--> Trying to open dashboard settings');
+  // The probes below use $()/count() (no auto-wait): wait until either the settings
+  // button or the settings page itself (delete button) has rendered
+  await page
+    .locator(
+      'button[data-testid="data-testid Dashboard settings"], button[data-testid="data-testid Dashboard settings page delete dashboard button"]'
+    )
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
   if (
     (await page.locator('button[data-testid="data-testid Dashboard settings page delete dashboard button"]').count()) >
     0
@@ -271,15 +279,24 @@ type SelectorMethod =
   | { method: 'css'; css: string };
 
 async function openDashboardSettingsForDelete(page: Page) {
-  if (await isInDashboardSettings(page)) {
-    log('--> Already in dashboard settings page (delete button visible), skipping settings button click');
-    return;
-  }
   const selectors = [
     'button[aria-label="Dashboard settings"]',
     'button[data-testid="data-testid Dashboard settings"]',
     'button[aria-label="Dashboard settings (old)"]',
   ];
+  // isInDashboardSettings and the $() loop below have no auto-wait: let either the
+  // settings button or the settings page (delete button) render first
+  await page
+    .locator(
+      `${selectors.join(', ')}, button[data-testid="data-testid Dashboard settings page delete dashboard button"]`
+    )
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
+  if (await isInDashboardSettings(page)) {
+    log('--> Already in dashboard settings page (delete button visible), skipping settings button click');
+    return;
+  }
   for (const sel of selectors) {
     const btn = await page.$(sel);
     if (btn) {
@@ -297,6 +314,14 @@ async function openDashboardSettingsForDelete(page: Page) {
 }
 
 async function openDashboardByTitle(page: Page, dashboardTitle: string) {
+  // count() below has no auto-wait — let the list render the title or a folder first
+  await page
+    .getByText(dashboardTitle, { exact: true })
+    .first()
+    .or(page.getByText('General', { exact: true }).first())
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
   let dash = page.getByText(dashboardTitle, { exact: true });
   if (await dash.count()) {
     await dash.first().click();
@@ -465,12 +490,6 @@ export async function createDashboardWithQueryVariable(
 ) {
   log('--> Creating dashboard with Query variable');
   await page.goto('http://localhost:3000/dashboard/new');
-  // Wait for the new-dashboard toolbar; the helpers below look buttons up without auto-wait
-  await page
-    .getByTestId('data-testid Dashboard settings')
-    .first()
-    .waitFor({ state: 'visible', timeout: 10000 })
-    .catch(() => {});
 
   // Open Dashboard settings
   await clickDashboardSettingsButton(page);
@@ -545,12 +564,6 @@ export async function createDashboardWithConstVariable(
 ) {
   log('--> Creating dashboard with Const variable');
   await page.goto('http://localhost:3000/dashboard/new');
-  // Wait for the new-dashboard toolbar; the helpers below look buttons up without auto-wait
-  await page
-    .getByTestId('data-testid Dashboard settings')
-    .first()
-    .waitFor({ state: 'visible', timeout: 10000 })
-    .catch(() => {});
 
   // Open Dashboard settings
   await clickDashboardSettingsButton(page);
@@ -594,12 +607,6 @@ export async function createDashboardWithCustomMultiVariable(
 ): Promise<boolean> {
   log('--> Creating dashboard with Custom multi-value variable');
   await page.goto('http://localhost:3000/dashboard/new');
-  // Wait for the new-dashboard toolbar; the helpers below look buttons up without auto-wait
-  await page
-    .getByTestId('data-testid Dashboard settings')
-    .first()
-    .waitFor({ state: 'visible', timeout: 10000 })
-    .catch(() => {});
 
   // Open Dashboard settings
   await clickDashboardSettingsButton(page);
@@ -661,12 +668,6 @@ export async function createDashboardWithIntervalVariable(
 ) {
   log('--> Creating dashboard with Interval variable');
   await page.goto('http://localhost:3000/dashboard/new');
-  // Wait for the new-dashboard toolbar; the helpers below look buttons up without auto-wait
-  await page
-    .getByTestId('data-testid Dashboard settings')
-    .first()
-    .waitFor({ state: 'visible', timeout: 10000 })
-    .catch(() => {});
 
   // Open Dashboard settings
   await clickDashboardSettingsButton(page);
@@ -964,23 +965,8 @@ export async function cleanupDashboard(page: Page, dashboardTitle: string) {
   const version = await getGrafanaVersion(page);
   log(`--> Grafana version detected: ${version}`);
   await page.goto('http://localhost:3000/dashboards');
-  // Wait for the dashboard list to render (openDashboardByTitle relies on count())
-  await page
-    .getByText(dashboardTitle, { exact: true })
-    .first()
-    .waitFor({ state: 'visible', timeout: 10000 })
-    .catch(() => {});
-
   await openDashboardByTitle(page, dashboardTitle);
   log(`--> Opened dashboard "${dashboardTitle}"`);
-
-  // Wait for the dashboard view before entering edit mode (edit button lookup uses count())
-  await page
-    .locator('button[data-testid="data-testid Edit dashboard button"]')
-    .first()
-    .waitFor({ state: 'visible', timeout: 10000 })
-    .catch(() => {});
-
   await openDashboardEdit(page);
 
   await clickDeleteDashboardButton(page, version);
@@ -1122,12 +1108,6 @@ export async function createDashboardAndRunQuery(
 ) {
   log('--> Creating dashboard and panel');
   await page.goto('http://localhost:3000/dashboard/new');
-  // Wait for the new-dashboard toolbar; the helpers below look buttons up without auto-wait
-  await page
-    .getByTestId('data-testid Dashboard settings')
-    .first()
-    .waitFor({ state: 'visible', timeout: 10000 })
-    .catch(() => {});
 
   await clickAddPanelButton(page);
 
@@ -1178,6 +1158,15 @@ export async function createDashboardAndRunQuery(
 
 export async function goToDashboard(page: Page, dashboardName: string) {
   const directDashboard = page.getByRole('link', { name: dashboardName });
+  // The probes below use count()/isVisible() (no auto-wait): let the dashboard
+  // list render first, whichever entry shows up
+  await directDashboard
+    .first()
+    .or(page.getByText(dashboardName, { exact: true }).first())
+    .or(page.getByText('General', { exact: true }).first())
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
   if ((await directDashboard.count()) > 0 && (await directDashboard.first().isVisible())) {
     await directDashboard.first().click();
     console.log('Clicked direct "${dashboardName}" link.');
@@ -1497,22 +1486,23 @@ export async function logVisibility(page: Page, label: string) {
   }
 }
 
-export async function testDatasourceInvalidURL(
-  page: Page,
-  saveButton: {
-    type: string;
-    name: string;
-  },
-  urlSelector = '#url'
-) {
+/**
+ * Arms a wait for the round-trip a "Save & test" click triggers: the PUT-and-health
+ * exchange ends with GET /api/datasources/uid/<uid>/health. Arm BEFORE clicking,
+ * await after. Resolves null on timeout so callers decide what a missing health
+ * response means.
+ */
+export function waitForHealthCheckResponse(page: Page, timeout = 15000): Promise<PWResponse | null> {
+  return page
+    .waitForResponse((res) => res.url().includes('/api/datasources') && res.url().includes('/health'), { timeout })
+    .catch(() => null);
+}
+
+export async function testDatasourceInvalidURL(page: Page, urlSelector = '#url') {
   const urlInput = page.locator(urlSelector);
   await urlInput.fill('http://localhost:9999');
   log('--> Attempting to save and test datasource with invalid URL...');
-  if (saveButton.type === 'role') {
-    await page.getByRole('button', { name: saveButton.name }).click();
-  } else {
-    await page.getByTestId(saveButton.name).click();
-  }
+  await page.getByRole('button', { name: 'Save & test' }).click();
   // A transient "Testing... this could take up to a couple of minutes" info alert shows
   // first with the same testid, so target the final alert by its text. Health check goes
   // through the backend plugin; under a fully parallel run it can take well over 3s.
