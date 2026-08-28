@@ -17,17 +17,15 @@ import {
   cleanupDashboard,
   deleteDatasource,
 } from '../../utils';
-import { test, expect } from '@playwright/test';
+import { test, expect, uniqueName } from '../../fixtures';
 
 // === TEST ===
 
 test('Multi-value custom variable substitution', async ({ page }) => {
-  const dsName = 'ds_custom_multivar';
+  const dsName = uniqueName('ds_custom_multivar');
   const varName = 'sensors';
   const varValues = ['sensorA', 'sensorB', 'sensorC'];
-  // Unique per run: a leftover dashboard with the same name (leaked by a previously
-  // failed run) disables the Save button with "same name already exists"
-  const dashboardTitle = `MultiCustomVariableDashboard_${Date.now()}`;
+  const dashboardTitle = uniqueName('MultiCustomVariableDashboard');
 
   log('--> Starting multi-value custom variable substitution test');
   await setupDatasource(page, dsName);

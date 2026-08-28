@@ -6,7 +6,7 @@
  *
  * Scope: scenario (integration)
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, registerDatasource } from '../fixtures';
 import {
   log,
   getGrafanaVersion,
@@ -74,6 +74,7 @@ test('Basic scenario: Create DS, Dashboard, Select Datasource, Get Warp10 Respon
 
   // Fill datasource config
   log('--> Filling datasource config');
+  registerDatasource('test_warp10_scenario');
   await page.fill('#basic-settings-name', 'test_warp10_scenario');
 
   // Fill invalid URL first and test error

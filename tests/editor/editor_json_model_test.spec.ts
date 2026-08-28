@@ -10,7 +10,7 @@
  *
  * Scope: Editor (JSON model, query execution, error capture)
  */
-import { test } from '@playwright/test';
+import { test } from '../fixtures';
 import { log, getGrafanaVersion, createNewPanel } from '../utils';
 
 // Editor JSON Model Validation

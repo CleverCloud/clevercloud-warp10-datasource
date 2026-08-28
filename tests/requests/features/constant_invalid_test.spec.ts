@@ -11,12 +11,12 @@
  *
  * Scope: constants (negative test)
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, uniqueName } from '../../fixtures';
 import { log, deleteDatasource, createDashboardAndRunQuery, setupDatasource } from '../../utils';
 
 // === TEST : Invalid constant ===
 test('Test: Warp10 fails when constant is missing from datasource', async ({ page }) => {
-  const dsName = 'ds_invalid_const';
+  const dsName = uniqueName('ds_invalid_const');
   const missingConst = 'not_defined';
   log('--> Creating datasource without constants');
   await setupDatasource(page, dsName);

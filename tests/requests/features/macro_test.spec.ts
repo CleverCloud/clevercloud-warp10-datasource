@@ -7,7 +7,7 @@
  * Scope: Macro definition, payload structure, error propagation.
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../fixtures';
 import { log, getGrafanaVersion, goToNewDashboard, clickEditButton, clickEditPanelButton } from '../../utils';
 
 // === TEST: Editor JSON Model Validation ===

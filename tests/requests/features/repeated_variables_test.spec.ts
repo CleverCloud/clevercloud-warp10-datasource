@@ -4,7 +4,7 @@
  * - verify values in warpscript header
  * - verifies that repeated variables are correctly rendered in the dashboard.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../fixtures';
 import { goToDashboard, log } from '../../utils';
 
 const GRAFANA_HOST = 'http://localhost:3000';
