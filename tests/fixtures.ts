@@ -10,8 +10,7 @@
  */
 import { test as base, expect } from '@grafana/plugin-e2e';
 
-const GRAFANA_URL = process.env.GRAFANA_URL || 'http://localhost:3000';
-const AUTH = 'Basic ' + Buffer.from('admin:admin').toString('base64');
+import { api, apiList } from './grafana-api';
 
 // Per-worker registries (each worker process runs its tests serially, so the
 // registries only ever hold the current test's entries)
@@ -37,18 +36,6 @@ export function registerDashboard(title: string) {
  */
 export function uniqueName(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-}
-
-async function api(method: string, path: string): Promise<any> {
-  try {
-    const res = await fetch(`${GRAFANA_URL}/api${path}`, {
-      method,
-      headers: { Authorization: AUTH },
-    });
-    return await res.json();
-  } catch {
-    return null;
-  }
 }
 
 type ConstProp = { name: string; value: string };
@@ -86,7 +73,9 @@ export const test = base.extend<{
         await api('DELETE', `/datasources/name/${encodeURIComponent(name)}`);
       }
       if (dashTitles.length > 0) {
-        const dashboards: Array<{ uid: string; title: string }> = (await api('GET', '/search?type=dash-db')) ?? [];
+        // apiList never yields a JSON error body ({"message": ...}), which would
+        // pass a `?? []` guard as a non-null object and crash the for..of below
+        const dashboards: Array<{ uid: string; title: string }> = await apiList('/search?type=dash-db');
         for (const d of dashboards) {
           if (dashTitles.includes(d.title)) {
             await api('DELETE', `/dashboards/uid/${d.uid}`);
