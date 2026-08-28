@@ -6,7 +6,7 @@
  *
  * Scope: editor (query editor rendering and behavior)
  */
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures';
 import { log, getGrafanaVersion, goToNewDashboard, clickEditPanelButton } from '../utils';
 
 // Editor JSON Model Validation

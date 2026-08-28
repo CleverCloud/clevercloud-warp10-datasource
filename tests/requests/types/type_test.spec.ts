@@ -9,7 +9,7 @@
  *
  * Scope: requests (data layer validation)
  */
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../fixtures';
 import { log, getGrafanaVersion, createNewDashboardAndSelectWarp10 } from '../../utils';
 
 test('Warp10 Request Test: response types, formatting, macros, nulls, timestamps', async ({ page }) => {

@@ -9,7 +9,7 @@
  * Scope: variable (interval variable behavior)
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect, uniqueName } from '../../fixtures';
 import {
   log,
   setupDatasource,
@@ -20,11 +20,9 @@ import {
 } from '../../utils';
 
 test('Interval variable substitution works', async ({ page }) => {
-  const dsName = 'ds_interval_test';
+  const dsName = uniqueName('ds_interval_test');
   const varName = 'myInterval';
-  // Unique per run: a leftover dashboard with the same name (leaked by a previously
-  // failed run) disables the Save button with "same name already exists"
-  const dashboardTitle = `DashboardWithInterval_${Date.now()}`;
+  const dashboardTitle = uniqueName('DashboardWithInterval');
 
   log('--> Starting Interval variable substitution test');
   await setupDatasource(page, dsName);

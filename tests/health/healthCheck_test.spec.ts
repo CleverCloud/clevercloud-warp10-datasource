@@ -3,7 +3,7 @@
  * @description Unit-level tests for Warp10 datasource healthcheck (proxy and direct modes).
  * Scope: backend health only
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, registerDatasource } from '../fixtures';
 import { log, getGrafanaVersion, openNewWarp10Datasource } from '../utils';
 
 // Test healthcheck in proxy and direct modes only
@@ -41,6 +41,7 @@ test('Healthcheck in proxy and direct modes', async ({ page }) => {
   // Create datasource in proxy mode
   log('--> Navigating to data sources page...');
   await openNewWarp10Datasource(page);
+  registerDatasource('test_health_warp10');
   await page.fill('#basic-settings-name', 'test_health_warp10');
   await page.fill('#url', 'http://warp10:8080');
 

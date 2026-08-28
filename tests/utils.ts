@@ -1,5 +1,6 @@
 import { expect, Page, Request as PWRequest, Response as PWResponse } from '@playwright/test';
 import { Locator } from 'playwright';
+import { registerDashboard, registerDatasource } from './fixtures';
 
 // in ms
 export const defaultTimeout = 2000;
@@ -226,6 +227,7 @@ export async function openNewWarp10Datasource(page: Page) {
 
 export async function setupDatasource(page: Page, dsName: string) {
   log('--> Creating test datasource');
+  registerDatasource(dsName);
   await openNewWarp10Datasource(page);
   await page.fill('#basic-settings-name', dsName);
   log(`--> Entered datasource name: ${dsName}`);
@@ -338,12 +340,40 @@ async function clickSaveDashboardButton(page: Page) {
 }
 
 async function clickDashboardFinalSaveButton(page: Page) {
+  // The drawer's Save button stays disabled until the title field is validated, which
+  // only triggers on blur — so blur the freshly filled title first
+  const titleField = page.locator('input[aria-label="Save dashboard title field"]');
+  if (await titleField.count()) {
+    await titleField.press('Tab').catch(() => {});
+  }
   // The save drawer animates open; give its button a chance to appear before probing selectors
   await page
     .getByTestId('data-testid Save dashboard drawer button')
     .first()
     .waitFor({ state: 'visible', timeout: 5000 })
     .catch(() => {});
+  // Navigating away while the save request is still in flight pops an "Unsaved changes"
+  // modal that blocks everything after — so sync on the save round-trip below
+  const saveResponse = page
+    .waitForResponse((res) => res.url().includes('/api/dashboards/db') && res.request().method() === 'POST', {
+      timeout: 10000,
+    })
+    .catch(() => null);
+
+  // Known-good candidate first, with a timeout long enough to wait out the
+  // enabled/stable actionability checks while title validation completes
+  const drawerBtn = page.getByTestId('data-testid Save dashboard drawer button').first();
+  if (await drawerBtn.isVisible().catch(() => false)) {
+    try {
+      await drawerBtn.click({ timeout: 15000 });
+      log('--> Clicked Save button (drawer)');
+      await saveResponse;
+      return;
+    } catch (e) {
+      log(`--> Drawer Save button not clickable (${(e as Error).message.split('\n')[0]}), probing fallbacks`);
+    }
+  }
+
   const selectors = [
     { method: 'role', role: 'button', name: 'Save dashboard button' },
     { method: 'testId', testId: 'data-testid Save dashboard drawer button' },
@@ -371,11 +401,41 @@ async function clickDashboardFinalSaveButton(page: Page) {
         log(
           `--> Clicked Save button using ${sel.method}${sel.testId ? ' ' + sel.testId : sel.name ? ' ' + sel.name : ''}`
         );
+        await saveResponse;
         return;
       }
     } catch (e) {}
   }
   throw new Error('No "Save" dashboard button found for any known selector or Grafana version.');
+}
+
+/**
+ * Leaving the dashboard settings right after a save can still pop the "Unsaved changes"
+ * modal (the settings view considers pending edits). Confirm it so the flow can continue.
+ */
+async function dismissUnsavedChangesModal(page: Page) {
+  const modal = page.getByText('Unsaved changes', { exact: true });
+  const appeared = await modal
+    .first()
+    .waitFor({ state: 'visible', timeout: 2000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!appeared) {
+    return;
+  }
+  log('--> "Unsaved changes" modal detected, saving');
+  const saveBtn = page.getByRole('dialog').getByRole('button', { name: 'Save dashboard' });
+  if (await saveBtn.count()) {
+    await saveBtn.first().click({ timeout: 3000 }).catch(() => {});
+  } else {
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'Discard' })
+      .first()
+      .click({ timeout: 3000 })
+      .catch(() => {});
+  }
+  await modal.first().waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
 }
 
 export async function createDashboardWithQueryVariable(
@@ -433,6 +493,7 @@ export async function createDashboardWithQueryVariable(
   // Save the dashboard
   await clickSaveDashboardButton(page);
   log('--> Clicked save');
+  registerDashboard(dashboardTitle);
   await page.fill('input[aria-label="Save dashboard title field"]', dashboardTitle);
   log(`--> Set dashboard title: "${dashboardTitle}"`);
   await clickDashboardFinalSaveButton(page);
@@ -498,6 +559,7 @@ export async function createDashboardWithConstVariable(
   // Save the dashboard
   await clickSaveDashboardButton(page);
   log('--> Clicked save');
+  registerDashboard(dashboardTitle);
   await page.fill('input[aria-label="Save dashboard title field"]', dashboardTitle);
   log(`--> Set dashboard title: "${dashboardTitle}"`);
   await clickDashboardFinalSaveButton(page);
@@ -560,6 +622,7 @@ export async function createDashboardWithCustomMultiVariable(
   // Save the dashboard
   await clickSaveDashboardButton(page);
   log('--> Clicked save');
+  registerDashboard(dashboardTitle);
   await page.fill('input[aria-label="Save dashboard title field"]', dashboardTitle);
   log(`--> Set dashboard title: "${dashboardTitle}"`);
   await clickDashboardFinalSaveButton(page);
@@ -626,11 +689,41 @@ export async function createDashboardWithIntervalVariable(
   // Save the dashboard
   await clickSaveDashboardButton(page);
   log('--> Clicked save');
+  registerDashboard(dashboardTitle);
   await page.fill('input[aria-label="Save dashboard title field"]', dashboardTitle);
   log(`--> Set dashboard title: "${dashboardTitle}"`);
   await clickDashboardFinalSaveButton(page);
   log('--> Clicked "Save dashboard" button');
   log('--> Dashboard with interval variable created');
+}
+
+/**
+ * Leaves the panel editor or the dashboard settings view. The button carries the
+ * 'Back to dashboard' testid in the panel editor, but only a role/name in the
+ * settings view — so try both, then confirm the "Unsaved changes" modal if it pops.
+ */
+async function backToDashboard(page: Page) {
+  const candidates = [
+    page.locator('button[data-testid="data-testid Back to dashboard button"]'),
+    page.getByRole('button', { name: 'Back to dashboard' }),
+  ];
+  for (const candidate of candidates) {
+    const visible = await candidate
+      .first()
+      .waitFor({ state: 'visible', timeout: 3000 })
+      .then(() => true)
+      .catch(() => false);
+    if (visible) {
+      await candidate
+        .first()
+        .click({ timeout: 3000 })
+        .catch(() => {});
+      log('--> Clicked "Back to dashboard"');
+      await dismissUnsavedChangesModal(page);
+      return;
+    }
+  }
+  log('--> "Back to dashboard" button not found or not visible, skipping.');
 }
 
 export async function executeQueryAndCapturePayload(
@@ -644,18 +737,7 @@ export async function executeQueryAndCapturePayload(
 }> {
   log('--> Preparing to execute query in panel');
 
-  const backBtn = page.locator('button[data-testid="data-testid Back to dashboard button"]');
-  // count()/isVisible() below have no auto-wait, so give the button a chance to render
-  await backBtn
-    .first()
-    .waitFor({ state: 'visible', timeout: 5000 })
-    .catch(() => {});
-  if ((await backBtn.count()) && (await backBtn.first().isVisible())) {
-    await backBtn.first().click();
-    log('--> Clicked "Back to dashboard"');
-  } else {
-    log('--> "Back to dashboard" button not found or not visible, skipping.');
-  }
+  await backToDashboard(page);
 
   await clickAddPanelButton(page);
   log('--> Clicked to add new panel');
@@ -710,18 +792,7 @@ export async function executeQueryAndCapturePayloadMulti(
 }> {
   log('--> Preparing to execute query in panel');
 
-  const backBtn = page.locator('button[data-testid="data-testid Back to dashboard button"]');
-  // count()/isVisible() below have no auto-wait, so give the button a chance to render
-  await backBtn
-    .first()
-    .waitFor({ state: 'visible', timeout: 5000 })
-    .catch(() => {});
-  if ((await backBtn.count()) && (await backBtn.first().isVisible())) {
-    await backBtn.first().click();
-    log('--> Clicked "Back to dashboard"');
-  } else {
-    log('--> "Back to dashboard" button not found or not visible, skipping.');
-  }
+  await backToDashboard(page);
 
   await clickAddPanelButton(page);
   log('--> Clicked to add new panel');
@@ -808,18 +879,7 @@ export async function executeQueryAndValidate(
   let queryResponse: PWResponse | undefined;
 
   // UI steps to create panel and execute query
-  const backBtn = page.locator('button[data-testid="data-testid Back to dashboard button"]');
-  // count()/isVisible() below have no auto-wait, so give the button a chance to render
-  await backBtn
-    .first()
-    .waitFor({ state: 'visible', timeout: 5000 })
-    .catch(() => {});
-  if ((await backBtn.count()) && (await backBtn.first().isVisible())) {
-    await backBtn.first().click();
-    log('--> Clicked "Back to dashboard"');
-  } else {
-    log('--> "Back to dashboard" button not found or not visible, skipping.');
-  }
+  await backToDashboard(page);
   await clickAddPanelButton(page);
   log('--> Clicked to add new panel');
   await page.getByText(dsName).click();
@@ -1020,6 +1080,7 @@ export async function deleteDatasource(
 }
 
 export async function addConstantToDatasource(page: Page, dsName: string, constName: string, constValue: string) {
+  registerDatasource(dsName);
   await deleteDatasource(page, dsName);
   log('--> Navigating to new datasource creation');
   await openNewWarp10Datasource(page);

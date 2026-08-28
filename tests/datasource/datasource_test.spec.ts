@@ -6,7 +6,7 @@
  *
  * Scope: datasource (configuration UI + backend health)
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, registerDatasource } from '../fixtures';
 import {
   log,
   getGrafanaVersion,
@@ -69,6 +69,7 @@ test('Datasource: test all fields in datasource config + healthcheck', async ({ 
   await openNewWarp10Datasource(page);
 
   log('--> Filling Plugin Name');
+  registerDatasource('test_warp10');
   await page.fill('#basic-settings-name', 'test_warp10');
 
   log('--> Testing misconfiguration: setting an invalid Warp10 URL');
@@ -104,7 +105,11 @@ test('Datasource: test all fields in datasource config + healthcheck', async ({ 
   // check fires), so retry the save until a health response actually comes back and assert
   // on its payload — more reliable than the transient success alert.
   let proxyHealth: any = null;
-  for (let attempt = 0; attempt < 3 && !proxyHealth; attempt++) {
+  for (let attempt = 0; attempt < 4 && !proxyHealth; attempt++) {
+    // The backend caches the datasource instance keyed by its `updated` timestamp, which
+    // has one-second granularity: two saves within the same second keep the stale instance
+    // and the health check still hits the previous (invalid) URL. Space the attempts out.
+    await page.waitForTimeout(1200);
     // The form re-renders after the previous save and can revert the URL field to the
     // invalid value, so re-fill it on every attempt before saving
     await urlInput.fill('http://warp10:8080');
