@@ -25,7 +25,9 @@ test('Single variable substitution (Query type)', async ({ page }) => {
   const dsName = 'ds_var_test_single';
   const varName = 'queryval';
   const varQuery = '10 20 +';
-  const dashboardTitle = 'SingleVariableDashboard';
+  // Unique per run: a leftover dashboard with the same name (leaked by a previously
+  // failed run) disables the Save button with "same name already exists"
+  const dashboardTitle = `SingleVariableDashboard_${Date.now()}`;
 
   log('--> Starting Single variable substitution test');
   await setupDatasource(page, dsName);

@@ -4,7 +4,7 @@
  * Scope: backend health only
  */
 import { test, expect } from '@playwright/test';
-import { log, getGrafanaVersion } from '../utils';
+import { log, getGrafanaVersion, openNewWarp10Datasource } from '../utils';
 
 // Test healthcheck in proxy and direct modes only
 test('Healthcheck in proxy and direct modes', async ({ page }) => {
@@ -34,18 +34,13 @@ test('Healthcheck in proxy and direct modes', async ({ page }) => {
   // Setup
   const version = await getGrafanaVersion(page);
   log(`--> Detected Grafana version: ${version}`);
-  const dsPath = '/connections/datasources/new';
   const saveButton = { type: 'role', name: 'Save & test' };
   const deleteButton = { type: 'testId', name: 'Data source settings page Delete button' };
   const confirmButton = { type: 'testId', name: 'data-testid Confirm Modal Danger Button' };
 
   // Create datasource in proxy mode
   log('--> Navigating to data sources page...');
-  await page.goto(`http://localhost:3000${dsPath}`);
-  // Let the SPA finish hydrating before interacting, otherwise clicks can land on inert elements
-  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-
-  await page.getByRole('button', { name: 'Warp10' }).click();
+  await openNewWarp10Datasource(page);
   await page.fill('#basic-settings-name', 'test_health_warp10');
   await page.fill('#url', 'http://warp10:8080');
 

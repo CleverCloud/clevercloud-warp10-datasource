@@ -7,7 +7,14 @@
  * Scope: datasource (configuration UI + backend health)
  */
 import { test, expect } from '@playwright/test';
-import { log, getGrafanaVersion, fillPairAndClickAdd, logVisibility, testDatasourceInvalidURL } from '../utils';
+import {
+  log,
+  getGrafanaVersion,
+  fillPairAndClickAdd,
+  logVisibility,
+  testDatasourceInvalidURL,
+  openNewWarp10Datasource,
+} from '../utils';
 
 // Datasource component and health check
 test('Datasource: test all fields in datasource config + healthcheck', async ({ page }) => {
@@ -51,8 +58,6 @@ test('Datasource: test all fields in datasource config + healthcheck', async ({ 
   const version = await getGrafanaVersion(page);
   log(`--> Detected Grafana version: ${version}`);
 
-  const dsPath = '/connections/datasources/new';
-
   const saveButton = { type: 'role', name: 'Save & test' };
 
   const deleteButton = { type: 'testId', name: 'Data source settings page Delete button' };
@@ -61,11 +66,7 @@ test('Datasource: test all fields in datasource config + healthcheck', async ({ 
 
   // Create datasource
   log('--> Navigating to data sources page...');
-  await page.goto(`http://localhost:3000${dsPath}`);
-  // Let the SPA finish hydrating before interacting, otherwise clicks can land on inert elements
-  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-
-  await page.getByRole('button', { name: 'Warp10' }).click();
+  await openNewWarp10Datasource(page);
 
   log('--> Filling Plugin Name');
   await page.fill('#basic-settings-name', 'test_warp10');

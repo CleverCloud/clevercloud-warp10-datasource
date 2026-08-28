@@ -149,6 +149,14 @@ export async function clickAddPanelButton(page: Page) {
     'button:has-text("Add visualization")',
   ];
 
+  // page.$() has no auto-wait, so first wait for any candidate to render
+  // (the dashboard page can take a while to hydrate on a loaded machine)
+  await page
+    .locator(selectors.join(', '))
+    .first()
+    .waitFor({ state: 'visible', timeout: 15000 })
+    .catch(() => {});
+
   for (const sel of selectors) {
     const el = await page.$(sel);
     if (el) {
@@ -161,13 +169,35 @@ export async function clickAddPanelButton(page: Page) {
   throw new Error('Could not find "Add Panel" button for any known selector or Grafana version.');
 }
 
+/**
+ * Opens /connections/datasources/new and selects the Warp10 tile.
+ * Selecting the tile creates the datasource (POST) and navigates to its edit page,
+ * but before the SPA finishes hydrating the click can land on an inert element and
+ * do nothing — so retry until the edit form (name field) actually shows up.
+ */
+export async function openNewWarp10Datasource(page: Page) {
+  await page.goto('http://localhost:3000/connections/datasources/new');
+  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+  const nameField = page.locator('#basic-settings-name');
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await page
+      .getByRole('button', { name: 'Warp10' })
+      .click({ timeout: 5000 })
+      .catch(() => {});
+    try {
+      await nameField.waitFor({ state: 'visible', timeout: 5000 });
+      log('--> Clicked "Warp10" tile, edit form visible');
+      return;
+    } catch {
+      log(`--> Warp10 tile click did not land (attempt ${attempt}), retrying`);
+    }
+  }
+  throw new Error('Warp10 datasource edit form never appeared after clicking the tile');
+}
+
 export async function setupDatasource(page: Page, dsName: string) {
   log('--> Creating test datasource');
-  await page.goto('http://localhost:3000/connections/datasources/new');
-  // Let the SPA finish hydrating before interacting, otherwise clicks can land on inert elements
-  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-  await page.getByRole('button', { name: 'Warp10' }).click();
-  log('--> Clicked "Warp10" datasource');
+  await openNewWarp10Datasource(page);
   await page.fill('#basic-settings-name', dsName);
   log(`--> Entered datasource name: ${dsName}`);
   await page.fill('#url', 'http://warp10:8080');
@@ -865,6 +895,8 @@ async function getVariableQueryTextarea(page: Page) {
   let textarea = page.locator(
     '[data-testid="data-testid Variable editor Form Default Variable Query Editor textarea"]'
   );
+  // count() has no auto-wait, so give the editor time to render before probing
+  await textarea.first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
   if ((await textarea.count()) > 0 && (await textarea.first().isVisible({ timeout: 2000 }))) {
     log('--> Found textarea by data-testid');
     return textarea.first();
@@ -900,7 +932,7 @@ export async function createNewDashboardAndSelectWarp10(page: Page) {
 
   //Select the Warp10-Clever-Cloud datasource
   const warp10Card = page.locator('[data-testid="data-source-card"] span', { hasText: 'Warp10-Clever-Cloud' });
-  await warp10Card.first().waitFor({ state: 'visible', timeout: 3000 });
+  await warp10Card.first().waitFor({ state: 'visible', timeout: 15000 });
   await warp10Card.first().click();
   console.log('--> Selected "Warp10-Clever-Cloud" datasource');
 }
@@ -955,10 +987,7 @@ export async function deleteDatasource(
 export async function addConstantToDatasource(page: Page, dsName: string, constName: string, constValue: string) {
   await deleteDatasource(page, dsName);
   log('--> Navigating to new datasource creation');
-  await page.goto('http://localhost:3000/connections/datasources/new');
-  // Let the SPA finish hydrating before interacting, otherwise clicks can land on inert elements
-  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-  await page.getByRole('button', { name: 'Warp10' }).click();
+  await openNewWarp10Datasource(page);
 
   log('--> Configuring basic settings');
   await page.fill('#basic-settings-name', dsName);
@@ -1379,9 +1408,13 @@ export async function testDatasourceInvalidURL(
   } else {
     await page.getByTestId(saveButton.name).click();
   }
-  const alertSelector = page.locator('[data-testid="data-testid Alert info"]');
-  // Health check goes through the backend plugin; under a fully parallel run it
-  // can take well over 3s to come back, so give it a generous timeout.
+  // A transient "Testing... this could take up to a couple of minutes" info alert shows
+  // first with the same testid, so target the final alert by its text. Health check goes
+  // through the backend plugin; under a fully parallel run it can take well over 3s.
+  const alertSelector = page
+    .locator('[data-testid="data-testid Alert info"]')
+    .filter({ hasText: 'connection refused' })
+    .first();
   await expect(alertSelector).toBeVisible({ timeout: 15000 });
   const alertText = await alertSelector.textContent();
   expect(alertText).toContain('connect: connection refused');
