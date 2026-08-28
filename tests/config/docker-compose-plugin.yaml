@@ -26,7 +26,9 @@ services:
       retries: 6
 
   warp10:
-    image: warp10io/warp10:3.5.0-alpine
+    # Keep the default in sync with docker-compose.yaml at the repo root
+    # (pkg/plugin/warp10_testcontainer_test.go pins its own copy)
+    image: warp10io/warp10:${WARP10_VERSION:-3.5.0-alpine}
     container_name: warp10
     ports:
       - 8080:8080

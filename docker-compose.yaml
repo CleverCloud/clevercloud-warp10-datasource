@@ -1,6 +1,9 @@
+# No container_name here: the e2e stack (tests/config/docker-compose-plugin.yaml)
+# declares the same fixed names, and duplicated container names make `npm run server`
+# fail outright while that stack is up. Without them Docker Compose derives unique
+# names from the project, and only the (inherent) host-port overlap remains.
 services:
   grafana:
-    container_name: 'clevercloud-warp10-datasource'
     build:
       context: ./.config
       args:
@@ -28,8 +31,7 @@ services:
       start_period: 10s
 
   warp10:
-    image: warp10io/warp10:3.5.0-alpine
-    container_name: warp10
+    image: warp10io/warp10:${WARP10_VERSION:-3.5.0-alpine}
     ports:
       - 8080:8080
       - 8081:8081
