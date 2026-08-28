@@ -15,11 +15,24 @@ import { api, apiList } from './grafana-api';
 // Per-worker registries (each worker process runs its tests serially, so the
 // registries only ever hold the current test's entries)
 const createdDatasources: string[] = [];
+const createdDatasourceUids: string[] = [];
 const createdDashboards: string[] = [];
 
 export function registerDatasource(name: string) {
   if (!createdDatasources.includes(name)) {
     createdDatasources.push(name);
+  }
+}
+
+/**
+ * Selecting the plugin tile POSTs the datasource under Grafana's default name
+ * ('Warp10') before any test code names it. A test dying between that POST and
+ * its first save leaks a datasource the name-based cleanup can never find —
+ * the uid recorded at creation reaches it regardless of what it is named.
+ */
+export function registerDatasourceUid(uid: string) {
+  if (!createdDatasourceUids.includes(uid)) {
+    createdDatasourceUids.push(uid);
   }
 }
 
@@ -67,10 +80,16 @@ export const test = base.extend<{
     async ({}, use) => {
       await use();
       const dsNames = createdDatasources.splice(0);
+      const dsUids = createdDatasourceUids.splice(0);
       const dashTitles = createdDashboards.splice(0);
       for (const name of dsNames) {
         // 404 (already deleted by the test's own UI cleanup) is fine
         await api('DELETE', `/datasources/name/${encodeURIComponent(name)}`);
+      }
+      for (const uid of dsUids) {
+        // Reaches datasources still under Grafana's default name (see registerDatasourceUid);
+        // 404 (already deleted by name above, or by the test itself) is fine
+        await api('DELETE', `/datasources/uid/${encodeURIComponent(uid)}`);
       }
       if (dashTitles.length > 0) {
         // apiList never yields a JSON error body ({"message": ...}), which would
