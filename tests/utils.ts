@@ -1,6 +1,6 @@
 import { expect, Page, Request as PWRequest, Response as PWResponse } from '@playwright/test';
 import { Locator } from 'playwright';
-import { registerDashboard, registerDatasource } from './fixtures';
+import { registerDashboard, registerDatasource, registerDatasourceUid } from './fixtures';
 
 // in ms
 export const defaultTimeout = 2000;
@@ -208,21 +208,39 @@ export async function clickAddPanelButton(page: Page) {
 export async function openNewWarp10Datasource(page: Page) {
   await page.goto('http://localhost:3000/connections/datasources/new');
   await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-  const nameField = page.locator('#basic-settings-name');
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    await page
-      .getByRole('button', { name: 'Warp10' })
-      .click({ timeout: 5000 })
-      .catch(() => {});
-    try {
-      await nameField.waitFor({ state: 'visible', timeout: 5000 });
-      log('--> Clicked "Warp10" tile, edit form visible');
-      return;
-    } catch {
-      log(`--> Warp10 tile click did not land (attempt ${attempt}), retrying`);
+  // The tile click POSTs the datasource under Grafana's default name ('Warp10');
+  // record the uid of every datasource created here so autoCleanup can delete it
+  // even when the test dies before the rename is saved (the name-based cleanup
+  // would then look for a name that was never persisted)
+  const onCreated = async (res: PWResponse) => {
+    if (res.url().endsWith('/api/datasources') && res.request().method() === 'POST') {
+      const body = await res.json().catch(() => null);
+      const uid = body?.datasource?.uid ?? body?.uid;
+      if (uid) {
+        registerDatasourceUid(uid);
+      }
     }
+  };
+  page.on('response', onCreated);
+  try {
+    const nameField = page.locator('#basic-settings-name');
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      await page
+        .getByRole('button', { name: 'Warp10' })
+        .click({ timeout: 5000 })
+        .catch(() => {});
+      try {
+        await nameField.waitFor({ state: 'visible', timeout: 5000 });
+        log('--> Clicked "Warp10" tile, edit form visible');
+        return;
+      } catch {
+        log(`--> Warp10 tile click did not land (attempt ${attempt}), retrying`);
+      }
+    }
+    throw new Error('Warp10 datasource edit form never appeared after clicking the tile');
+  } finally {
+    page.off('response', onCreated);
   }
-  throw new Error('Warp10 datasource edit form never appeared after clicking the tile');
 }
 
 export async function setupDatasource(page: Page, dsName: string) {
