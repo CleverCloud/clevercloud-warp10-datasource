@@ -645,30 +645,12 @@ export async function createDashboardWithCustomMultiVariable(
   log(`--> Set dashboard title: "${dashboardTitle}"`);
   await clickDashboardFinalSaveButton(page);
   log('--> Clicked "Save dashboard" button');
-  // --- Add the variable selection code here ---
-  let indicator = false;
-  const el = page.getByTestId('data-testid template variable');
-  if ((await el.count()) > 0 && (await el.isVisible()) && indicator === false) {
-    await el.click();
-    // Wait for the variable dropdown options to render (count() below has no auto-wait)
-    await page
-      .getByText('sensorsB', { exact: true })
-      .first()
-      .waitFor({ state: 'visible', timeout: 5000 })
-      .catch(() => {});
-    for (const sensor of ['sensorsB', 'sensorsC']) {
-      const option = page.getByText(sensor, { exact: true });
-      if (await option.count()) {
-        await option.click();
-      }
-    }
-    log('--> Selected all sensors for variable');
-  } else {
-    log('--> Element data-testid template variable Not Found');
-  }
-
+  // No selection happens here: the historical post-save block probed dropdown options
+  // 'sensorsB'/'sensorsC', which never exist (the values are sensorA..C), so it only
+  // burned a 5s swallowed wait. The real selection lives in
+  // executeQueryAndCapturePayloadMulti, which runs when this returns false.
   log('--> Dashboard with custom multi-value variable created');
-  return indicator;
+  return false;
 }
 
 export async function createDashboardWithIntervalVariable(
@@ -831,12 +813,10 @@ export async function executeQueryAndCapturePayloadMulti(
         await option.click();
       }
     }
-    // Fire-and-forget refresh, as before: this click can be intercepted by transient overlays
-    // and the actual synchronized run happens below
-    void page
-      .getByTestId('data-testid RefreshPicker run button')
-      .click({ timeout: 5000 })
-      .catch(() => {});
+    // Close the dropdown so the selection is committed; no refresh click here — a
+    // fire-and-forget run at this point can land its POST inside the capture window
+    // below and satisfy it with an expr that predates the query fill
+    await page.keyboard.press('Escape').catch(() => {});
     log('--> Selected all sensors for variable');
   } else {
     log('--> Element data-testid template variable Not Found');
@@ -847,10 +827,21 @@ export async function executeQueryAndCapturePayloadMulti(
 
   // Make sure the editor content is committed before triggering the run
   await expect(editor).toHaveValue(query);
-  // Wait for the request and response triggered by clicking "Run"
+  // Wait for the request and response triggered by clicking "Run". The variable
+  // selection above can leave a variable-triggered query in flight, so match both
+  // sides on the body actually carrying the filled query — matching by URL alone
+  // could also pair a request and a response from two different exchanges.
+  const carriesQuery = (postData: string | null) => (postData || '').includes(query.split('\n')[0]);
   const [queryRequest, queryResponse] = await Promise.all([
-    page.waitForRequest((req) => req.url().includes('/api/ds/query') && req.method() === 'POST'),
-    page.waitForResponse((res) => res.url().includes('/api/ds/query') && res.request().method() === 'POST'),
+    page.waitForRequest(
+      (req) => req.url().includes('/api/ds/query') && req.method() === 'POST' && carriesQuery(req.postData())
+    ),
+    page.waitForResponse(
+      (res) =>
+        res.url().includes('/api/ds/query') &&
+        res.request().method() === 'POST' &&
+        carriesQuery(res.request().postData())
+    ),
     page.getByTestId('data-testid RefreshPicker run button').click(),
   ]);
   log('--> Clicked "Run" button');
