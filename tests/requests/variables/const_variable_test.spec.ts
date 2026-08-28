@@ -23,7 +23,9 @@ test('Single constant substitution (Datasource constant)', async ({ page }) => {
   const dsName = 'ds_const_test_single';
   const constName = 'myConstVar';
   const constValue = '42';
-  const dashboardTitle = 'DashboardWithConst';
+  // Unique per run: a leftover dashboard with the same name (leaked by a previously
+  // failed run) disables the Save button with "same name already exists"
+  const dashboardTitle = `DashboardWithConst_${Date.now()}`;
 
   log('--> Starting Single constant substitution test');
   await setupDatasource(page, dsName);

@@ -22,7 +22,9 @@ import {
 test('Interval variable substitution works', async ({ page }) => {
   const dsName = 'ds_interval_test';
   const varName = 'myInterval';
-  const dashboardTitle = 'DashboardWithInterval';
+  // Unique per run: a leftover dashboard with the same name (leaked by a previously
+  // failed run) disables the Save button with "same name already exists"
+  const dashboardTitle = `DashboardWithInterval_${Date.now()}`;
 
   log('--> Starting Interval variable substitution test');
   await setupDatasource(page, dsName);

@@ -7,7 +7,14 @@
  * Scope: scenario (integration)
  */
 import { test, expect } from '@playwright/test';
-import { log, getGrafanaVersion, clickAddPanelButton, FinalTestValidation, testDatasourceInvalidURL } from '../utils';
+import {
+  log,
+  getGrafanaVersion,
+  clickAddPanelButton,
+  FinalTestValidation,
+  testDatasourceInvalidURL,
+  openNewWarp10Datasource,
+} from '../utils';
 
 // Main test scenario
 test('Basic scenario: Create DS, Dashboard, Select Datasource, Get Warp10 Response', async ({ page }) => {
@@ -51,8 +58,6 @@ test('Basic scenario: Create DS, Dashboard, Select Datasource, Get Warp10 Respon
   const version = await getGrafanaVersion(page);
   log(`--> Detected Grafana version: ${version}`);
 
-  const basePath = '/connections/datasources/new';
-
   const saveButton = { type: 'role', name: 'Save & test' };
 
   const saveButtonName = 'Save & test';
@@ -65,10 +70,7 @@ test('Basic scenario: Create DS, Dashboard, Select Datasource, Get Warp10 Respon
 
   // === Step 1: Create datasource ===
   log('--> Creating new Warp10 datasource');
-  await page.goto(`http://localhost:3000${basePath}`);
-  // Let the SPA finish hydrating before interacting, otherwise clicks can land on inert elements
-  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-  await page.getByRole('button', { name: 'Warp10' }).click();
+  await openNewWarp10Datasource(page);
 
   // Fill datasource config
   log('--> Filling datasource config');
