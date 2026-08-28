@@ -12,20 +12,18 @@
 import { test, expect, uniqueName } from '../../fixtures';
 import {
   log,
-  setupDatasource,
   cleanupDashboard,
-  deleteDatasource,
   createDashboardWithIntervalVariable,
   executeQueryAndValidate,
 } from '../../utils';
 
-test('Interval variable substitution works', async ({ page }) => {
+test('Interval variable substitution works', async ({ page, createWarp10Datasource }) => {
   const dsName = uniqueName('ds_interval_test');
   const varName = 'myInterval';
   const dashboardTitle = uniqueName('DashboardWithInterval');
 
   log('--> Starting Interval variable substitution test');
-  await setupDatasource(page, dsName);
+  await createWarp10Datasource(dsName);
 
   // Create dashboard with interval variable
   await createDashboardWithIntervalVariable(page, dsName, varName, dashboardTitle);
@@ -55,7 +53,6 @@ test('Interval variable substitution works', async ({ page }) => {
   expect(expr).toContain(`$myInterval 'intervalValue' STORE $intervalValue`);
   log('--> OK: Interval variable value is stored and used as expected in expr');
 
-  await deleteDatasource(page, dsName);
   await cleanupDashboard(page, dashboardTitle);
   log('--> Test Ended successfully');
 });

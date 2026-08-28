@@ -11,24 +11,22 @@
 
 import {
   log,
-  setupDatasource,
   createDashboardWithCustomMultiVariable,
   executeQueryAndCapturePayloadMulti,
   cleanupDashboard,
-  deleteDatasource,
 } from '../../utils';
 import { test, expect, uniqueName } from '../../fixtures';
 
 // === TEST ===
 
-test('Multi-value custom variable substitution', async ({ page }) => {
+test('Multi-value custom variable substitution', async ({ page, createWarp10Datasource }) => {
   const dsName = uniqueName('ds_custom_multivar');
   const varName = 'sensors';
   const varValues = ['sensorA', 'sensorB', 'sensorC'];
   const dashboardTitle = uniqueName('MultiCustomVariableDashboard');
 
   log('--> Starting multi-value custom variable substitution test');
-  await setupDatasource(page, dsName);
+  await createWarp10Datasource(dsName);
 
   // This utility should create a dashboard with a custom variable (multi-value) with the provided values.
   let indicator = await createDashboardWithCustomMultiVariable(page, dsName, varName, varValues, dashboardTitle);
@@ -69,7 +67,6 @@ test('Multi-value custom variable substitution', async ({ page }) => {
   }
 
   log('--> Multi-value custom variable substitution verified');
-  await deleteDatasource(page, dsName);
   await cleanupDashboard(page, dashboardTitle);
   log('--> Test Ended successfully');
 });

@@ -11,22 +11,20 @@
 
 import {
   log,
-  setupDatasource,
   cleanupDashboard,
-  deleteDatasource,
   createDashboardWithConstVariable,
   executeQueryAndValidate,
 } from '../../utils';
 import { test, expect, uniqueName } from '../../fixtures';
 
-test('Single constant substitution (Datasource constant)', async ({ page }) => {
+test('Single constant substitution (Datasource constant)', async ({ page, createWarp10Datasource }) => {
   const dsName = uniqueName('ds_const_test_single');
   const constName = 'myConstVar';
   const constValue = '42';
   const dashboardTitle = uniqueName('DashboardWithConst');
 
   log('--> Starting Single constant substitution test');
-  await setupDatasource(page, dsName);
+  await createWarp10Datasource(dsName);
 
   // Create dashboard and add the constant variable
   await createDashboardWithConstVariable(page, dsName, constName, constValue, dashboardTitle);
@@ -74,7 +72,6 @@ test('Single constant substitution (Datasource constant)', async ({ page }) => {
   log('--> Verified backend response value is 62');
 
   log('--> Single constant substitution verified');
-  await deleteDatasource(page, dsName);
   await cleanupDashboard(page, dashboardTitle);
   log('--> Test Ended successfully');
 });
