@@ -52,13 +52,6 @@ test('Warp10 Request Test: response types, formatting, macros, nulls, timestamps
   log(`--> Detected Grafana version: ${version}`);
 
   await page.goto('http://localhost:3000/dashboard/new');
-  // createNewDashboardAndSelectWarp10 looks the add-panel button up with $() (no auto-wait)
-  await page
-    .getByTestId('data-testid Create new panel button')
-    .first()
-    .waitFor({ state: 'visible', timeout: 10000 })
-    .catch(() => {});
-
   await createNewDashboardAndSelectWarp10(page);
 
   const editor = page.locator('.query-editor-row textarea').first();

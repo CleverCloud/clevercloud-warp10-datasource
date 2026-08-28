@@ -14,6 +14,7 @@ import {
   logVisibility,
   testDatasourceInvalidURL,
   openNewWarp10Datasource,
+  waitForHealthCheckResponse,
 } from '../utils';
 
 // Datasource component and health check
@@ -58,12 +59,6 @@ test('Datasource: test all fields in datasource config + healthcheck', async ({ 
   const version = await getGrafanaVersion(page);
   log(`--> Detected Grafana version: ${version}`);
 
-  const saveButton = { type: 'role', name: 'Save & test' };
-
-  const deleteButton = { type: 'testId', name: 'Data source settings page Delete button' };
-
-  const confirmButton = { type: 'testId', name: 'data-testid Confirm Modal Danger Button' };
-
   // Create datasource
   log('--> Navigating to data sources page...');
   await openNewWarp10Datasource(page);
@@ -73,7 +68,7 @@ test('Datasource: test all fields in datasource config + healthcheck', async ({ 
   await page.fill('#basic-settings-name', 'test_warp10');
 
   log('--> Testing misconfiguration: setting an invalid Warp10 URL');
-  await testDatasourceInvalidURL(page, saveButton);
+  await testDatasourceInvalidURL(page);
 
   log('--> Filling Warp10 URL');
   const urlInput = page.locator('#url');
@@ -82,16 +77,8 @@ test('Datasource: test all fields in datasource config + healthcheck', async ({ 
   log(`--> URL input filled with: ${currentValue}`);
 
   log('--> Saving datasource to trigger healthcheck...');
-  let healthRespPromise = page
-    .waitForResponse((res) => res.url().includes('/api/datasources') && res.url().includes('/health'), {
-      timeout: 15000,
-    })
-    .catch(() => null);
-  if (saveButton.type === 'role') {
-    await page.getByRole('button', { name: saveButton.name }).click();
-  } else {
-    await page.getByTestId(saveButton.name).click();
-  }
+  let healthRespPromise = waitForHealthCheckResponse(page);
+  await page.getByRole('button', { name: 'Save & test' }).click();
   await healthRespPromise;
 
   if (healthResponse) {
@@ -108,18 +95,17 @@ test('Datasource: test all fields in datasource config + healthcheck', async ({ 
   for (let attempt = 0; attempt < 4 && !proxyHealth; attempt++) {
     // The backend caches the datasource instance keyed by its `updated` timestamp, which
     // has one-second granularity: two saves within the same second keep the stale instance
-    // and the health check still hits the previous (invalid) URL. Space the attempts out.
-    await page.waitForTimeout(1200);
+    // and the health check still hits the previous (invalid) URL. Space retries out —
+    // the first attempt gets its chance immediately.
+    if (attempt > 0) {
+      await page.waitForTimeout(1200);
+    }
     // The form re-renders after the previous save and can revert the URL field to the
     // invalid value, so re-fill it on every attempt before saving
     await urlInput.fill('http://warp10:8080');
     await expect(urlInput).toHaveValue('http://warp10:8080');
-    const respPromise = page
-      .waitForResponse((res) => res.url().includes('/api/datasources') && res.url().includes('/health'), {
-        timeout: 10000,
-      })
-      .catch(() => null);
-    await page.getByRole('button', { name: saveButton.name }).click();
+    const respPromise = waitForHealthCheckResponse(page, 10000);
+    await page.getByRole('button', { name: 'Save & test' }).click();
     const resp = await respPromise;
     proxyHealth = resp ? await resp.json().catch(() => null) : null;
     if (proxyHealth && String(proxyHealth.status).toLowerCase() === 'error') {
@@ -155,16 +141,8 @@ test('Datasource: test all fields in datasource config + healthcheck', async ({ 
   });
 
   log('--> Saving again after adding constants/macros...');
-  healthRespPromise = page
-    .waitForResponse((res) => res.url().includes('/api/datasources') && res.url().includes('/health'), {
-      timeout: 15000,
-    })
-    .catch(() => null);
-  if (saveButton.type === 'role') {
-    await page.getByRole('button', { name: saveButton.name }).click();
-  } else {
-    await page.getByTestId(saveButton.name).click();
-  }
+  healthRespPromise = waitForHealthCheckResponse(page);
+  await page.getByRole('button', { name: 'Save & test' }).click();
   await healthRespPromise;
 
   // Refresh and verify values
@@ -178,17 +156,8 @@ test('Datasource: test all fields in datasource config + healthcheck', async ({ 
 
   // Cleanup (delete datasource)
   log('--> Deleting datasource...');
-  if (deleteButton.type === 'role') {
-    await page.getByRole('button', { name: deleteButton.name }).click();
-  } else {
-    await page.getByTestId(deleteButton.name).click();
-  }
-
-  if (confirmButton.type === 'role') {
-    await page.getByRole('button', { name: confirmButton.name }).click();
-  } else {
-    await page.getByTestId(confirmButton.name).click();
-  }
+  await page.getByTestId('Data source settings page Delete button').click();
+  await page.getByTestId('data-testid Confirm Modal Danger Button').click();
 
   log('--> Datasource deleted successfully');
   log('--> Datasource configuration test completed!');

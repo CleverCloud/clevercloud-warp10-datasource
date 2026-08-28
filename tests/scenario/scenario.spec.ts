@@ -14,6 +14,7 @@ import {
   FinalTestValidation,
   testDatasourceInvalidURL,
   openNewWarp10Datasource,
+  waitForHealthCheckResponse,
 } from '../utils';
 
 // Main test scenario
@@ -58,10 +59,6 @@ test('Basic scenario: Create DS, Dashboard, Select Datasource, Get Warp10 Respon
   const version = await getGrafanaVersion(page);
   log(`--> Detected Grafana version: ${version}`);
 
-  const saveButton = { type: 'role', name: 'Save & test' };
-
-  const saveButtonName = 'Save & test';
-
   const myDsPath = '/connections/datasources';
 
   const deleteButton = page.getByTestId('Data source settings page Delete button');
@@ -79,7 +76,7 @@ test('Basic scenario: Create DS, Dashboard, Select Datasource, Get Warp10 Respon
 
   // Fill invalid URL first and test error
   log('--> Attempting to save and test datasource with invalid URL...');
-  await testDatasourceInvalidURL(page, saveButton);
+  await testDatasourceInvalidURL(page);
 
   log('--> Filling Warp10 URL 8080');
   // Correct URL for the actual test run
@@ -90,12 +87,8 @@ test('Basic scenario: Create DS, Dashboard, Select Datasource, Get Warp10 Respon
 
   // Save and test
   log('--> Saving and testing datasource...');
-  const healthRespPromise = page
-    .waitForResponse((res) => res.url().includes('/api/datasources') && res.url().includes('/health'), {
-      timeout: 15000,
-    })
-    .catch(() => null);
-  await page.getByRole('button', { name: saveButtonName }).click();
+  const healthRespPromise = waitForHealthCheckResponse(page);
+  await page.getByRole('button', { name: 'Save & test' }).click();
   await healthRespPromise;
 
   if (healthResponse) {
@@ -107,12 +100,6 @@ test('Basic scenario: Create DS, Dashboard, Select Datasource, Get Warp10 Respon
   // === Step 2: Build dashboard ===
   log('--> Opening dashboard creation wizard');
   await page.getByRole('link', { name: 'Build a dashboard' }).click();
-  // clickAddPanelButton looks the button up with $() (no auto-wait), so let the page render first
-  await page
-    .getByTestId('data-testid Create new panel button')
-    .first()
-    .waitFor({ state: 'visible', timeout: 10000 })
-    .catch(() => {});
 
   log('--> Creating new panel');
   await clickAddPanelButton(page);

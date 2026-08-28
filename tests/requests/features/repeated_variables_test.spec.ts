@@ -39,12 +39,6 @@ test.describe('Repeated Variables Feature', () => {
 
     // Navigate to the dashboard
     await page.goto(`${GRAFANA_HOST}/dashboards`);
-    // goToDashboard relies on count() (no auto-wait), so let the dashboard list render first
-    await page
-      .getByText('Test repeated vars', { exact: true })
-      .first()
-      .waitFor({ state: 'visible', timeout: PLAYWRIGHT_TIMEOUT })
-      .catch(() => {});
     await goToDashboard(page, 'Test repeated vars');
 
     // ---- Verify the payloads: the dashboard fires one query per repeated panel
