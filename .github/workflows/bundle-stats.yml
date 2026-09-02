@@ -12,28 +12,29 @@ on:
       - main
   workflow_dispatch:
 
+# pull-requests: write is what the size comment needs; actions: read fetches the
+# main-branch-stats artifact of the last main build. No content is ever written.
 permissions:
-  contents: write
+  contents: read
   pull-requests: write
   actions: read
 
 jobs:
   compare:
     runs-on: ubuntu-latest
+    # GitHub strips write permissions from pull requests opened from forks, so the
+    # comment step would fail with a 403 and paint an external contribution red for
+    # a cosmetic metric. Skip the job there; the size comparison stays for internal
+    # PRs, and the main/dispatch runs that produce the baseline artifact are unaffected.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      # The action sets up Node, installs and builds by itself (with --profile
+      # --json, the build that produces the stats), so no separate steps here.
+      # Node 22 is what ci.yml and .nvmrc pin.
+      - uses: grafana/plugin-actions/bundle-size@main
         with:
           node-version: '22'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build plugin
-        run: npm run build
-
-      - uses: grafana/plugin-actions/bundle-size@main
