@@ -18,16 +18,23 @@ We no longer use Cypress — Playwright is the **officially supported framework*
 > - All tests are validated on **Chromium** and **Firefox**.
 > - **Safari (Webkit)** is explicitly **not supported** due to recurring instability in both local and CI environments.
 
-### 1. Start Local Stack
+### 1. Build the plugin, then start the local stack
 
 ```bash
-  docker compose -f docker-compose-plugin.yaml up
+  npm run build && mage build:linux   # frontend + linux backend binary into ./dist
+  GRAFANA_VERSION=12.1.1 npm run e2e:stack
+  npm run e2e:stack:verify
 ```
 
-This launches:
+This pulls the official `grafana/grafana` and `warp10io/warp10` images (no custom image is
+built or published), bind-mounts `./dist` as the plugin, waits for both healthchecks, then
+proves the plugin is registered and its backend answers a health check. The exact same
+commands run in CI, for every Grafana version of the matrix.
+
 - Warp10 server (`warp10:8080`)
-- Grafana server (`grafana:3000`)
-- Warp10 preconfigured with a mock token
+- Grafana server (`grafana:3000`, `admin` / `admin`)
+
+Stop it with `npm run e2e:stack:down`.
 
 ### 2. Launch Playwright in UI Mode
 
