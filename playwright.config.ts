@@ -39,10 +39,10 @@ export default defineConfig<PluginOptions>({
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */
   retries: process.env.CI ? 2 : 0,
-  /* Opt out of parallel tests on CI. Locally, cap workers: unbounded parallelism
-   * saturates a machine that is also compiling/running an IDE and turns every
-   * wait into a flake. */
-  workers: process.env.CI ? 1 : 4,
+  /* Cap workers: unbounded parallelism saturates a machine that is also
+   * compiling/running an IDE and turns every wait into a flake. CI runners have
+   * 4 vCPUs shared with the Grafana + Warp10 containers, so 2 there. */
+  workers: process.env.CI ? 2 : 4,
   /* Purge test state leaked into Grafana by previously failed runs */
   globalSetup: './tests/global-setup.ts',
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
