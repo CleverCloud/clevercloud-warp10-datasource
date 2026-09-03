@@ -75,14 +75,15 @@ describe('computeGrafanaContext (datasource constants and macros)', () => {
     expect(header).toBe("<% 2 * %> 'double' STORE\nLINEON\n");
   });
 
-  it('keeps single quotes in plain values as-is (the sanitizing replace is overwritten)', () => {
-    // Pin of current behavior: applyVarToHeader first replaces ' with " but the next
-    // branch overwrites `value` with the raw quoted original, so the replacement is
-    // effectively dead for non-macro values. A value containing a single quote thus
-    // produces broken WarpScript — worth a look in the plugin itself.
+  // Known defect: applyVarToHeader sanitizes single quotes (' -> ") but the next
+  // branch rebuilds the value from the RAW original, so the sanitization is dead
+  // and the emitted WarpScript is broken ('it's'). `failing` asserts the CORRECT
+  // output and inverts automatically: once the plugin is fixed, this test goes
+  // red to demand the .failing marker be removed.
+  it.failing('sanitizes single quotes in plain values', () => {
     const ds = makeDataSource({ const: [{ name: 'quoted', value: "it's" }] });
     const header = (ds as any).computeGrafanaContext();
-    expect(header).toContain("'it's' 'quoted' STORE");
+    expect(header).toContain(`'it"s' 'quoted' STORE`);
   });
 
   it('stores an empty string value as quoted empty', () => {
