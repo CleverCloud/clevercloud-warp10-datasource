@@ -16,22 +16,164 @@ export async function getGrafanaVersion(page: Page): Promise<string> {
   return body.version;
 }
 
-async function openDashboardEdit(page: Page) {
-  const editBtn = page.locator('button[data-testid="data-testid Edit dashboard button"]');
-  // count() has no auto-wait — let the dashboard toolbar render first
-  await editBtn
+/**
+ * Dashboard editing comes in two shapes:
+ *  - up to Grafana 12: a toolbar with "Add" / "Settings" buttons and, on an empty
+ *    dashboard, an "Add visualization" call-to-action;
+ *  - from Grafana 13: an edit sidebar whose "Add" pane offers Panel / Row / Variable and
+ *    whose "Options" pane replaces the settings button.
+ * The helpers below tell the two apart from the DOM (not the version number) so a
+ * feature toggle or a backport cannot fool them.
+ */
+function legacyEditControls(page: Page): Locator {
+  return page
+    .getByTestId('data-testid Add button')
+    .or(page.getByTestId('data-testid Dashboard settings'))
+    .or(page.getByTestId('data-testid Create new panel button'));
+}
+
+function sidebarEditControls(page: Page): Locator {
+  return page
+    .getByTestId('data-testid Dashboard Sidebar new button')
+    .or(page.getByTestId('data-testid sidebar add new panel'))
+    .or(page.getByTestId('data-testid sidebar-show-hide-toggle'));
+}
+
+/** Resolves once either editing shape has rendered; true for the Grafana 13 sidebar. */
+async function usesEditSidebar(page: Page): Promise<boolean> {
+  await legacyEditControls(page)
+    .or(sidebarEditControls(page))
     .first()
     .waitFor({ state: 'visible', timeout: 10000 })
     .catch(() => {});
-  if ((await editBtn.count()) && (await editBtn.first().isVisible())) {
-    await editBtn.first().click();
-    log('--> Clicked "Edit dashboard"');
-  } else {
-    log('--> Edit button not found or not visible (maybe already in edit mode or old Grafana version)');
-  }
+  return (await sidebarEditControls(page).count()) > 0;
+}
 
+/**
+ * Clicks "Edit" when the dashboard is in view mode. Grafana 13 keeps the same testid on
+ * the "Exit edit" button, so the text guard is what keeps this from leaving edit mode.
+ */
+async function enterDashboardEditMode(page: Page) {
+  // A save that leaves the scene "dirty" (a query variable refreshing its value, for
+  // one) pops "Unsaved changes" on the way out of edit mode; its backdrop swallows clicks
+  await dismissUnsavedChangesModal(page);
+  const editBtn = page.getByTestId('data-testid Edit dashboard button').filter({ hasNotText: 'Exit' }).first();
+  const editing = legacyEditControls(page).or(sidebarEditControls(page)).first();
+  await editBtn
+    .or(editing)
+    .first()
+    .waitFor({ state: 'visible', timeout: 15000 })
+    .catch(() => {});
+  if (await editBtn.isVisible().catch(() => false)) {
+    await editBtn.click();
+    log('--> Clicked "Edit dashboard"');
+    await editing.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+  } else {
+    log('--> Edit button not present (already in edit mode)');
+  }
+}
+
+/** Grafana 13: makes sure the sidebar shows its "Add" pane (Panel / Row / Variable). */
+async function openSidebarAddPane(page: Page) {
+  const addPanel = page.getByTestId('data-testid sidebar add new panel').first();
+  if (!(await addPanel.isVisible().catch(() => false))) {
+    await page.getByTestId('data-testid Dashboard Sidebar new button').first().click();
+    await addPanel.waitFor({ state: 'visible', timeout: 10000 });
+  }
+}
+
+/**
+ * Grafana 13: adds a panel through the sidebar. The panel lands unconfigured, so open
+ * its full editor — which shows the query editor alongside the visualization picker.
+ * The entry point is the panel's own "Configure visualization" call-to-action on an
+ * empty dashboard, or the sidebar's "Edit visualization" on one that has panels
+ * (matched by name: their testids differ between 13.1 and 13.2).
+ */
+async function addPanelViaSidebar(page: Page) {
+  await openSidebarAddPane(page);
+  await page.getByTestId('data-testid sidebar add new panel').first().click();
+  const configure = page
+    .getByRole('button', { name: 'Configure visualization' })
+    .or(page.getByRole('button', { name: 'Edit visualization' }))
+    .first();
+  await configure.waitFor({ state: 'visible', timeout: 10000 });
+  await configure.click();
+  await page.locator('.query-editor-row textarea').first().waitFor({ state: 'visible', timeout: 15000 });
+  log('--> Added a panel through the sidebar and opened its editor');
+}
+
+/**
+ * The panel editor can open on the visualization picker instead of the options pane
+ * (Grafana 12.4+ for a brand-new panel, always on 13). Pick "Time series" so the options
+ * pane — and its Title field — renders. A no-op when the pane is already there.
+ */
+async function ensurePanelOptionsPane(page: Page) {
+  const titleInput = page.getByTestId('data-testid Panel editor option pane field input Title').first();
+  const allVizTab = page
+    .getByTestId('data-testid Tab Visualizations')
+    .or(page.getByTestId('data-testid Tab All visualizations'))
+    .first();
+  const timeSeries = page.getByTestId('data-testid Plugin visualization item Time series').first();
+  await titleInput.or(allVizTab).or(timeSeries).first().waitFor({ state: 'visible', timeout: 10000 });
+  if (await titleInput.isVisible().catch(() => false)) {
+    return;
+  }
+  // Grafana 13 opens the picker on its (empty) "Suggestions" tab
+  if (await allVizTab.isVisible().catch(() => false)) {
+    await allVizTab.click();
+  }
+  await timeSeries.waitFor({ state: 'visible', timeout: 10000 });
+  await timeSeries.click();
+  await titleInput.waitFor({ state: 'visible', timeout: 10000 });
+  log('--> Picked "Time series", panel options pane visible');
+}
+
+/**
+ * Selects the datasource of the panel being edited. Grafana 12 pops a "Select data
+ * source" modal of cards when a panel is added to an empty dashboard; otherwise (a
+ * dashboard that already has panels, or Grafana 13) the query editor shows the picker
+ * input preset to the default datasource, and the choice comes from its dropdown.
+ */
+export async function selectPanelDatasource(page: Page, dsName: string) {
+  const card = page.locator('[data-testid="data-source-card"]').filter({ hasText: dsName }).first();
+  const picker = page
+    .locator('input#data-source-picker, input[data-testid="data-testid Select a data source"]')
+    .first();
+  await card.or(picker).first().waitFor({ state: 'visible', timeout: 15000 });
+  if (await card.isVisible().catch(() => false)) {
+    await card.click();
+    log(`--> Selected datasource "${dsName}" (card)`);
+    return;
+  }
+  await picker.click();
+  const option = page
+    .getByRole('option', { name: dsName, exact: true })
+    .or(page.locator('[data-testid="data-source-card"]').filter({ hasText: dsName }))
+    .first();
+  await option.waitFor({ state: 'visible', timeout: 10000 });
+  await option.click();
+  log(`--> Selected datasource "${dsName}" (picker)`);
+}
+
+async function openDashboardEdit(page: Page) {
+  await enterDashboardEditMode(page);
   // Now, try to open dashboard settings using known selectors.
   await clickDashboardSettingsButton(page);
+}
+
+/**
+ * Loads the dashboard settings view through its URL. Works on every Scenes-based
+ * Grafana and is the only route on 13, where the toolbar settings button is gone.
+ */
+async function openDashboardSettingsByUrl(page: Page) {
+  const url = new URL(page.url());
+  url.searchParams.set('editview', 'settings');
+  await page.goto(url.toString());
+  await page
+    .locator('button[data-testid="data-testid Dashboard settings page delete dashboard button"]')
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 });
+  log('--> Opened dashboard settings (editview=settings)');
 }
 
 function isVersionGreaterOrEqual(v: string, target: string): boolean {
@@ -95,7 +237,8 @@ async function clickDashboardSettingsButton(page: Page) {
     log('--> Clicked dashboard settings (role/name)');
     return;
   }
-  throw new Error('Dashboard settings button not found for any known selector.');
+  // No settings button (Grafana 13 sidebar): the settings view is still reachable by URL
+  await openDashboardSettingsByUrl(page);
 }
 
 async function clickDeleteDashboardButton(page: Page, version: string) {
@@ -150,26 +293,25 @@ async function clickDeleteDashboardButton(page: Page, version: string) {
   }
 }
 
+/**
+ * Adds a panel to the current dashboard and lands in its editor with the query editor
+ * visible. Enters edit mode first when needed (a freshly saved dashboard opens in view
+ * mode), then goes through the sidebar (Grafana 13) or the "Add visualization"
+ * call-to-action of an empty dashboard (Grafana 12).
+ */
 export async function clickAddPanelButton(page: Page) {
+  await enterDashboardEditMode(page);
+  if (await usesEditSidebar(page)) {
+    await addPanelViaSidebar(page);
+    return;
+  }
+
   const selectors = [
     '[data-testid="data-testid Create new panel button"]',
     '[data-testid="add-panel-button"]',
     'button[aria-label="Add new panel"]',
     'button:has-text("Add visualization")',
   ];
-
-  const probe = async () => {
-    for (const sel of selectors) {
-      const el = await page.$(sel);
-      if (el) {
-        await el.click();
-        log(`--> Clicked Add Panel button with selector: ${sel}`);
-        return true;
-      }
-    }
-    return false;
-  };
-
   // page.$() has no auto-wait, so first wait for any candidate to render
   // (the dashboard page can take a while to hydrate on a loaded machine)
   await page
@@ -177,29 +319,11 @@ export async function clickAddPanelButton(page: Page) {
     .first()
     .waitFor({ state: 'visible', timeout: 15000 })
     .catch(() => {});
-  if (await probe()) {
-    return;
-  }
-
-  // A freshly saved dashboard lands in view mode, where no add-panel button exists —
-  // enter edit mode and retry (count() has no auto-wait, so let the toolbar render first)
-  const editBtn = page.locator('button[data-testid="data-testid Edit dashboard button"]');
-  await editBtn
-    .first()
-    .waitFor({ state: 'visible', timeout: 10000 })
-    .catch(() => {});
-  if (await editBtn.count()) {
-    await editBtn
-      .first()
-      .click({ timeout: 5000 })
-      .catch(() => {});
-    log('--> Clicked "Edit dashboard" before adding panel');
-    await page
-      .locator(selectors.join(', '))
-      .first()
-      .waitFor({ state: 'visible', timeout: 10000 })
-      .catch(() => {});
-    if (await probe()) {
+  for (const sel of selectors) {
+    const el = await page.$(sel);
+    if (el) {
+      await el.click();
+      log(`--> Clicked Add Panel button with selector: ${sel}`);
       return;
     }
   }
@@ -231,14 +355,16 @@ export async function openNewWarp10Datasource(page: Page) {
   };
   page.on('response', onCreated);
   try {
-    const nameField = page.locator('#basic-settings-name');
+    // The edit form is recognized by its name control: an input up to Grafana 12, the
+    // editable page title (pencil button) from Grafana 13
+    const nameControl = page.locator('#basic-settings-name').or(editDatasourceTitleButton(page)).first();
     for (let attempt = 1; attempt <= 3; attempt++) {
       await page
         .getByRole('button', { name: 'Warp10' })
         .click({ timeout: 5000 })
         .catch(() => {});
       try {
-        await nameField.waitFor({ state: 'visible', timeout: 5000 });
+        await nameControl.waitFor({ state: 'visible', timeout: 5000 });
         log('--> Clicked "Warp10" tile, edit form visible');
         return;
       } catch {
@@ -251,12 +377,39 @@ export async function openNewWarp10Datasource(page: Page) {
   }
 }
 
+/** Grafana 13's pencil button next to the datasource page title (13.1 has no testid on it). */
+function editDatasourceTitleButton(page: Page): Locator {
+  return page
+    .getByTestId('data-testid Editable title edit button')
+    .or(page.getByRole('button', { name: 'Edit title' }))
+    .first();
+}
+
+/**
+ * Names the datasource being edited. Up to Grafana 12 the name is a plain form field;
+ * from 13 it is the editable page title (pencil button, input, Enter to commit). Both
+ * are persisted by the next "Save & test".
+ */
+export async function setDatasourceName(page: Page, dsName: string) {
+  const legacyField = page.locator('#basic-settings-name');
+  if (await legacyField.isVisible().catch(() => false)) {
+    await legacyField.fill(dsName);
+  } else {
+    await editDatasourceTitleButton(page).click();
+    const titleInput = page.locator('#page-editable-title');
+    await titleInput.waitFor({ state: 'visible', timeout: 5000 });
+    await titleInput.fill(dsName);
+    await titleInput.press('Enter');
+    await expect(page.locator('h1').first()).toHaveText(dsName);
+  }
+  log(`--> Entered datasource name: ${dsName}`);
+}
+
 export async function setupDatasource(page: Page, dsName: string) {
   log('--> Creating test datasource');
   registerDatasource(dsName);
   await openNewWarp10Datasource(page);
-  await page.fill('#basic-settings-name', dsName);
-  log(`--> Entered datasource name: ${dsName}`);
+  await setDatasourceName(page, dsName);
   await page.fill('#url', 'http://warp10:8080');
   log('--> Entered datasource URL');
   // Selecting the Warp10 tile already created the datasource and navigated to its edit page;
@@ -310,7 +463,8 @@ async function openDashboardSettingsForDelete(page: Page) {
       return;
     }
   }
-  throw new Error('Dashboard settings button not found for any known selector, and not already in settings.');
+  // No settings button (Grafana 13 sidebar): the settings view is still reachable by URL
+  await openDashboardSettingsByUrl(page);
 }
 
 async function openDashboardByTitle(page: Page, dashboardTitle: string) {
@@ -469,7 +623,10 @@ async function dismissUnsavedChangesModal(page: Page) {
   log('--> "Unsaved changes" modal detected, saving');
   const saveBtn = page.getByRole('dialog').getByRole('button', { name: 'Save dashboard' });
   if (await saveBtn.count()) {
-    await saveBtn.first().click({ timeout: 3000 }).catch(() => {});
+    await saveBtn
+      .first()
+      .click({ timeout: 3000 })
+      .catch(() => {});
   } else {
     await page
       .getByRole('dialog')
@@ -478,7 +635,71 @@ async function dismissUnsavedChangesModal(page: Page) {
       .click({ timeout: 3000 })
       .catch(() => {});
   }
-  await modal.first().waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  await modal
+    .first()
+    .waitFor({ state: 'hidden', timeout: 5000 })
+    .catch(() => {});
+}
+
+type VariableType = 'query' | 'custom' | 'constant' | 'interval';
+const VARIABLE_TYPE_LABEL: Record<VariableType, string> = {
+  query: 'Query',
+  custom: 'Custom',
+  constant: 'Constant',
+  interval: 'Interval',
+};
+
+/** The variable name field: settings form up to Grafana 12, sidebar pane from 13. */
+function variableNameInput(page: Page): Locator {
+  return page
+    .locator('[data-testid="data-testid Variable editor Form Name field"]')
+    .or(page.getByTestId('data-testid variable name input'))
+    .first();
+}
+
+/**
+ * Opens the editor of a brand-new variable on the dashboard being edited.
+ * Grafana 12: settings > Variables > Add variable > type dropdown.
+ * Grafana 13: sidebar "Add" pane > Variable > type card.
+ */
+async function openNewVariableEditor(page: Page, type: VariableType) {
+  if (await usesEditSidebar(page)) {
+    await openSidebarAddPane(page);
+    // The "Variable" entry of the Add pane only carries a testid from 13.2 on
+    await page.locator('#sidebar-container').getByRole('button', { name: 'Variable', exact: true }).first().click();
+    const typeCard = page.getByTestId(`data-testid variable type ${type}`).first();
+    await typeCard.waitFor({ state: 'visible', timeout: 10000 });
+    await typeCard.getByRole('button').first().click();
+    await variableNameInput(page).waitFor({ state: 'visible', timeout: 10000 });
+    log(`--> Opened a new ${VARIABLE_TYPE_LABEL[type]} variable in the sidebar`);
+    return;
+  }
+
+  await clickDashboardSettingsButton(page);
+  await page.getByText('Variables').click();
+  log('--> Clicked "Variables" tab');
+  await page.getByRole('button', { name: 'Add variable' }).click();
+  log('--> Clicked "Add variable"');
+  await selectTypeInVariablePanel(page, VARIABLE_TYPE_LABEL[type]);
+}
+
+/** Grafana 12 needs an explicit "Apply"; the Grafana 13 sidebar saves edits live. */
+async function applyVariableIfNeeded(page: Page) {
+  const applyBtn = page.getByTestId('data-testid Variable editor Apply button').first();
+  if (await applyBtn.isVisible().catch(() => false)) {
+    await applyBtn.click();
+    log('--> Clicked "Apply" to save variable');
+  }
+}
+
+async function saveNewDashboardAs(page: Page, dashboardTitle: string) {
+  await clickSaveDashboardButton(page);
+  log('--> Clicked save');
+  registerDashboard(dashboardTitle);
+  await page.fill('input[aria-label="Save dashboard title field"]', dashboardTitle);
+  log(`--> Set dashboard title: "${dashboardTitle}"`);
+  await clickDashboardFinalSaveButton(page);
+  log('--> Clicked "Save dashboard" button');
 }
 
 export async function createDashboardWithQueryVariable(
@@ -490,32 +711,26 @@ export async function createDashboardWithQueryVariable(
 ) {
   log('--> Creating dashboard with Query variable');
   await page.goto('http://localhost:3000/dashboard/new');
+  await openNewVariableEditor(page, 'query');
 
-  // Open Dashboard settings
-  await clickDashboardSettingsButton(page);
-  await page.getByText('Variables').click();
-  log('--> Clicked "Variables" tab');
-  await page.getByRole('button', { name: 'Add variable' }).click();
-  log('--> Clicked "Add variable"');
-
-  // Set variable type to "Query"
-  await page.click('[data-testid="data-testid Variable editor Form Type select"]');
-  log('--> Clicked type input for variable type selection');
-  try {
-    await page.click('[data-testid="data-testid Select option"]  >> span:has-text("Query")');
-  } catch (err) {
-    await page.click('[data-testid="data-testid Select option"]  >> span:has-text("Query")');
-  }
-  log('--> Set variable type to "Query"');
-
-  // Set variable name
-  await page.fill('[data-testid="data-testid Variable editor Form Name field"]', varName);
+  await variableNameInput(page).fill(varName);
   log(`--> Set variable name to "${varName}"`);
+
+  // Grafana 13 keeps the datasource + query behind an "Open variable editor" modal
+  const openEditor = page.getByTestId('data-testid Query Variable editor open button').first();
+  if (await openEditor.isVisible().catch(() => false)) {
+    await openEditor.click();
+    log('--> Opened the query variable editor modal');
+  }
 
   // Select the datasource
   await page.click('input[aria-label="Select a data source"]');
   log('--> Clicked datasource input');
-  await page.getByText(dsName, { exact: true }).click();
+  await page
+    .getByRole('option', { name: dsName, exact: true })
+    .or(page.getByText(dsName, { exact: true }))
+    .first()
+    .click();
   log(`--> Selected datasource: ${dsName}`);
 
   // Set the query for the variable
@@ -523,18 +738,19 @@ export async function createDashboardWithQueryVariable(
   await textarea.fill(varQuery);
   log(`--> Set query for variable: "${varQuery}"`);
 
-  // Save the variable
-  await page.getByTestId('data-testid Variable editor Apply button').click();
-  log('--> Clicked "Apply" to save variable');
+  // 13.2 confirms the modal with "Apply"; 13.1 applies edits live and only offers "Close"
+  const applyModal = page.getByTestId('data-testid Query Variable editor apply button').first();
+  const closeModal = page.getByRole('dialog').getByRole('button', { name: 'Close' }).first();
+  if (await applyModal.isVisible().catch(() => false)) {
+    await applyModal.click();
+    log('--> Applied the query variable editor modal');
+  } else if (await closeModal.isVisible().catch(() => false)) {
+    await closeModal.click();
+    log('--> Closed the query variable editor modal');
+  }
+  await applyVariableIfNeeded(page);
 
-  // Save the dashboard
-  await clickSaveDashboardButton(page);
-  log('--> Clicked save');
-  registerDashboard(dashboardTitle);
-  await page.fill('input[aria-label="Save dashboard title field"]', dashboardTitle);
-  log(`--> Set dashboard title: "${dashboardTitle}"`);
-  await clickDashboardFinalSaveButton(page);
-  log('--> Clicked "Save dashboard" button');
+  await saveNewDashboardAs(page, dashboardTitle);
   log('--> Dashboard with variable created');
 }
 
@@ -564,37 +780,20 @@ export async function createDashboardWithConstVariable(
 ) {
   log('--> Creating dashboard with Const variable');
   await page.goto('http://localhost:3000/dashboard/new');
+  await openNewVariableEditor(page, 'constant');
 
-  // Open Dashboard settings
-  await clickDashboardSettingsButton(page);
-  await page.getByText('Variables').click();
-  log('--> Clicked "Variables" tab');
-  await page.getByRole('button', { name: 'Add variable' }).click();
-  log('--> Clicked "Add variable"');
-
-  // 1. Set variable type first
-  await selectTypeInVariablePanel(page, 'Constant');
-
-  // 2. Now set variable name (AFTER type)
-  await page.fill('[data-testid="data-testid Variable editor Form Name field"]', varName);
+  await variableNameInput(page).fill(varName);
   log(`--> Set variable name to "${varName}"`);
 
-  // 3. Set constant value
-  await page.fill('[data-testid="data-testid Variable editor Form Constant Query field"]', constValue);
+  await page
+    .locator('[data-testid="data-testid Variable editor Form Constant Query field"]')
+    .or(page.locator('[data-testid="data-testid variable-type Value field property editor"] input'))
+    .first()
+    .fill(constValue);
   log(`--> Set constant value to "${constValue}"`);
 
-  // Save the variable
-  await page.getByTestId('data-testid Variable editor Apply button').click();
-  log('--> Clicked "Apply" to save variable');
-
-  // Save the dashboard
-  await clickSaveDashboardButton(page);
-  log('--> Clicked save');
-  registerDashboard(dashboardTitle);
-  await page.fill('input[aria-label="Save dashboard title field"]', dashboardTitle);
-  log(`--> Set dashboard title: "${dashboardTitle}"`);
-  await clickDashboardFinalSaveButton(page);
-  log('--> Clicked "Save dashboard" button');
+  await applyVariableIfNeeded(page);
+  await saveNewDashboardAs(page, dashboardTitle);
   log('--> Dashboard with const variable created');
 }
 
@@ -607,51 +806,41 @@ export async function createDashboardWithCustomMultiVariable(
 ): Promise<boolean> {
   log('--> Creating dashboard with Custom multi-value variable');
   await page.goto('http://localhost:3000/dashboard/new');
+  await openNewVariableEditor(page, 'custom');
 
-  // Open Dashboard settings
-  await clickDashboardSettingsButton(page);
-  await page.getByText('Variables').click();
-  log('--> Clicked "Variables" tab');
-  await page.getByRole('button', { name: 'Add variable' }).click();
-  log('--> Clicked "Add variable"');
-
-  // 1. Set variable type first
-  await selectTypeInVariablePanel(page, 'Custom');
-
-  // 2. Set variable name (AFTER type)
-  await page.fill('[data-testid="data-testid Variable editor Form Name field"]', varName);
+  await variableNameInput(page).fill(varName);
   log(`--> Set variable name to "${varName}"`);
 
-  // 3. Set values (comma-separated)
-  await page.fill('[data-testid="data-testid custom-variable-input"]', varValues.join(','));
+  // Grafana 13 keeps the values behind an "Open variable editor" modal
+  const openValues = page.getByTestId('data-testid custom-variable-options-open-button').first();
+  if (await openValues.isVisible().catch(() => false)) {
+    await openValues.click();
+    log('--> Opened the custom variable values modal');
+  }
+  await page.locator('[data-testid="data-testid custom-variable-input"]').first().fill(varValues.join(','));
   log(`--> Set custom variable values to "${varValues.join(',')}"`);
+  const applyValues = page.getByTestId('data-testid custom-variable-apply-button').first();
+  if (await applyValues.isVisible().catch(() => false)) {
+    await applyValues.click();
+    log('--> Applied the custom variable values modal');
+  }
 
-  // 4. Enable Multi-value
-  await page.waitForSelector('input[data-testid="data-testid Variable editor Form Multi switch"]:visible', {
-    state: 'attached',
-  });
-  await page
+  // Enable Multi-value
+  const multiSwitch = page
     .locator('input[data-testid="data-testid Variable editor Form Multi switch"]')
-    .first()
-    .check({ force: true });
-
-  await expect(
-    page.locator('input[data-testid="data-testid Variable editor Form Multi switch"]').first()
-  ).toBeChecked();
+    .or(
+      page.locator(
+        '[data-testid="data-testid selection-options-category Multi-value field property editor"] input[role="switch"]'
+      )
+    )
+    .first();
+  await multiSwitch.waitFor({ state: 'attached', timeout: 10000 });
+  await multiSwitch.check({ force: true });
+  await expect(multiSwitch).toBeChecked();
   log('--> Enabled Multi-value for custom variable');
 
-  // Save the variable
-  await page.getByTestId('data-testid Variable editor Apply button').click();
-  log('--> Clicked "Apply" to save variable');
-
-  // Save the dashboard
-  await clickSaveDashboardButton(page);
-  log('--> Clicked save');
-  registerDashboard(dashboardTitle);
-  await page.fill('input[aria-label="Save dashboard title field"]', dashboardTitle);
-  log(`--> Set dashboard title: "${dashboardTitle}"`);
-  await clickDashboardFinalSaveButton(page);
-  log('--> Clicked "Save dashboard" button');
+  await applyVariableIfNeeded(page);
+  await saveNewDashboardAs(page, dashboardTitle);
   // No selection happens here: the historical post-save block probed dropdown options
   // 'sensorsB'/'sensorsC', which never exist (the values are sensorA..C), so it only
   // burned a 5s swallowed wait. The real selection lives in
@@ -668,33 +857,14 @@ export async function createDashboardWithIntervalVariable(
 ) {
   log('--> Creating dashboard with Interval variable');
   await page.goto('http://localhost:3000/dashboard/new');
-
-  // Open Dashboard settings
-  await clickDashboardSettingsButton(page);
-  await page.getByText('Variables').click();
-  log('--> Clicked "Variables" tab');
-  await page.getByRole('button', { name: 'Add variable' }).click();
-  log('--> Clicked "Add variable"');
-
-  // Set variable type to "Interval"
-  await selectTypeInVariablePanel(page, 'Interval');
+  await openNewVariableEditor(page, 'interval');
 
   // Set variable name (default is "interval", but set it explicitly)
-  await page.fill('[data-testid="data-testid Variable editor Form Name field"]', varName);
+  await variableNameInput(page).fill(varName);
   log(`--> Set interval variable name to "${varName}"`);
 
-  // Save the variable
-  await page.getByTestId('data-testid Variable editor Apply button').click();
-  log('--> Clicked "Apply" to save interval variable');
-
-  // Save the dashboard
-  await clickSaveDashboardButton(page);
-  log('--> Clicked save');
-  registerDashboard(dashboardTitle);
-  await page.fill('input[aria-label="Save dashboard title field"]', dashboardTitle);
-  log(`--> Set dashboard title: "${dashboardTitle}"`);
-  await clickDashboardFinalSaveButton(page);
-  log('--> Clicked "Save dashboard" button');
+  await applyVariableIfNeeded(page);
+  await saveNewDashboardAs(page, dashboardTitle);
   log('--> Dashboard with interval variable created');
 }
 
@@ -742,8 +912,7 @@ export async function executeQueryAndCapturePayload(
 
   await clickAddPanelButton(page);
   log('--> Clicked to add new panel');
-  await page.getByText(dsName).click();
-  log(`--> Selected datasource: ${dsName}`);
+  await selectPanelDatasource(page, dsName);
   const editor = page.locator('.query-editor-row textarea').first();
   await editor.fill(query);
   log(`--> Entered query:\n${query}`);
@@ -797,8 +966,7 @@ export async function executeQueryAndCapturePayloadMulti(
 
   await clickAddPanelButton(page);
   log('--> Clicked to add new panel');
-  await page.getByText(dsName).click();
-  log(`--> Selected datasource: ${dsName}`);
+  await selectPanelDatasource(page, dsName);
   const el = page.getByTestId('data-testid template variable');
   if ((await el.count()) > 0 && (await el.isVisible()) && indicator === false) {
     await el.click();
@@ -892,8 +1060,7 @@ export async function executeQueryAndValidate(
   await backToDashboard(page);
   await clickAddPanelButton(page);
   log('--> Clicked to add new panel');
-  await page.getByText(dsName).click();
-  log(`--> Selected datasource: ${dsName}`);
+  await selectPanelDatasource(page, dsName);
   const editor = page.locator('.query-editor-row textarea').first();
   await editor.fill(query);
   await expect(editor).toHaveValue(query);
@@ -980,7 +1147,10 @@ async function getVariableQueryTextarea(page: Page) {
     '[data-testid="data-testid Variable editor Form Default Variable Query Editor textarea"]'
   );
   // count() has no auto-wait, so give the editor time to render before probing
-  await textarea.first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+  await textarea
+    .first()
+    .waitFor({ state: 'visible', timeout: 10000 })
+    .catch(() => {});
   if ((await textarea.count()) > 0 && (await textarea.first().isVisible({ timeout: 2000 }))) {
     log('--> Found textarea by data-testid');
     return textarea.first();
@@ -1015,10 +1185,7 @@ export async function createNewDashboardAndSelectWarp10(page: Page) {
   console.log('--> Clicked "Add visualization"');
 
   //Select the Warp10-Clever-Cloud datasource
-  const warp10Card = page.locator('[data-testid="data-source-card"] span', { hasText: 'Warp10-Clever-Cloud' });
-  await warp10Card.first().waitFor({ state: 'visible', timeout: 15000 });
-  await warp10Card.first().click();
-  console.log('--> Selected "Warp10-Clever-Cloud" datasource');
+  await selectPanelDatasource(page, 'Warp10-Clever-Cloud');
 }
 
 export async function deleteDatasource(
@@ -1081,7 +1248,7 @@ export async function addConstantToDatasource(page: Page, dsName: string, constN
   await openNewWarp10Datasource(page);
 
   log('--> Configuring basic settings');
-  await page.fill('#basic-settings-name', dsName);
+  await setDatasourceName(page, dsName);
   await page.fill('#url', 'http://warp10:8080');
 
   log('--> Adding constant');
@@ -1112,9 +1279,9 @@ export async function createDashboardAndRunQuery(
   await clickAddPanelButton(page);
 
   log('--> Selecting datasource');
-  await page.getByText(dsName, { exact: true }).click();
+  await selectPanelDatasource(page, dsName);
 
-  await page.locator('.query-editor-row textarea').fill(expr);
+  await page.locator('.query-editor-row textarea').first().fill(expr);
 
   log('--> Running query and capturing request...');
   const runButton = page.getByTestId('data-testid RefreshPicker run button');
@@ -1198,95 +1365,36 @@ export async function createNewPanel(page: Page, panelTitle = 'Test Editor JSON'
   log('--> Navigating to a new dashboard');
   await goToNewDashboard(page);
 
-  // Step 2: If "Edit" is needed, click it
-  // Some Grafana versions require you to enter edit mode before adding a panel
-  const editBtn = page.getByTestId('data-testid Edit dashboard button');
-  // count()/isVisible() below have no auto-wait, so let the dashboard view render first
-  await editBtn
-    .first()
-    .waitFor({ state: 'visible', timeout: 5000 })
-    .catch(() => {});
-  if ((await editBtn.count()) > 0 && (await editBtn.first().isVisible())) {
-    log('--> "Edit" button found, clicking it first');
-    await editBtn.first().click();
-    // Wait for the edit-mode toolbar (the "Add" button lookup below uses count())
-    await page
+  // Step 2: Enter edit mode (the provisioned dashboard opens in view mode)
+  await enterDashboardEditMode(page);
+  const sidebar = await usesEditSidebar(page);
+
+  // Step 3: Add a visualization
+  if (sidebar) {
+    await addPanelViaSidebar(page);
+  } else {
+    log('--> Clicking "Add" then "Visualization"');
+    const addBtn = page
       .getByTestId('data-testid Add button')
-      .first()
-      .waitFor({ state: 'visible', timeout: 5000 })
-      .catch(() => {});
-  } else {
-    log('--> "Edit" button not present, proceeding directly to "Add"');
+      .or(page.getByTestId('data-testid Add panel button'))
+      .first();
+    await addBtn.waitFor({ state: 'visible', timeout: 10000 });
+    await addBtn.click();
+    const addVisBtn = page.getByTestId('data-testid Add new visualization menu item').first();
+    await addVisBtn.waitFor({ state: 'visible', timeout: 5000 });
+    await addVisBtn.click();
   }
+  await ensurePanelOptionsPane(page);
 
-  // Step 3: Click "Add" then "Add new visualization"
-  log('--> Looking for "Add" button (classic selector)');
-  let addBtn = page.getByTestId('data-testid Add button');
-  if (!(await addBtn.count())) {
-    log('--> "Add" button not found with classic selector, trying alternate selector');
-    addBtn = page.getByTestId('data-testid Add panel button');
-    if (!(await addBtn.count())) {
-      throw new Error('--> Could not find "Add" button by any known selector');
-    } else {
-      log('--> "Add" button found with alternate selector');
-    }
-  } else {
-    log('--> "Add" button found with classic selector');
-  }
-  await addBtn.first().waitFor({ state: 'visible', timeout: 3000 });
-  await addBtn.first().click();
-
-  log('--> Clicking "Add new visualization" button');
-  const addVisBtn = page.getByTestId('data-testid Add new visualization menu item');
-  await addVisBtn.first().waitFor({ state: 'visible', timeout: 3000 });
-  await addVisBtn.first().click();
-  // Wait for the panel editor to open (the title input lookup below uses count())
-  await page
-    .locator('input[data-testid="data-testid Panel editor option pane field input Title"]')
-    .first()
-    .waitFor({ state: 'visible', timeout: 5000 })
-    .catch(() => {});
-
-  // Step 4: Fill panel title and query
+  // Step 4: Fill panel title, datasource and query
   log('--> Setting panel title');
-  let titleInput = page.locator('input[data-testid="data-testid Panel editor option pane field input Title"]');
-  if (!(await titleInput.count())) {
-    log('--> Title input with data-testid not found, trying #PanelFrameTitle');
-    titleInput = page.locator('input#PanelFrameTitle');
-    if (!(await titleInput.count())) {
-      log('--> #PanelFrameTitle not found, trying generic input inside [data-testid="input-wrapper"]');
-      titleInput = page.locator('[data-testid="input-wrapper"] input');
-      if (!(await titleInput.count())) {
-        throw new Error('--> Could not find title input by any known selector');
-      } else {
-        log('--> Title input found with generic selector inside input-wrapper');
-      }
-    } else {
-      log('--> Title input found with #PanelFrameTitle');
-    }
-  } else {
-    log('--> Title input found with data-testid');
-  }
-  await titleInput.waitFor({ state: 'visible', timeout: 2000 });
-  await titleInput.fill(panelTitle);
+  await page.getByTestId('data-testid Panel editor option pane field input Title').first().fill(panelTitle);
 
-  log('--> Checking if datasource picker is present');
-
-  const dsPicker = page.locator('input[data-testid="Select a data source"], input#data-source-picker');
-  if ((await dsPicker.count()) && (await dsPicker.first().isVisible())) {
-    log('--> Datasource picker found, selecting "Warp10-Clever-Cloud"');
-    await dsPicker.first().click();
-    const option = page.locator('text=Warp10-Clever-Cloud'); // Super broad but often effective
-    await option.first().waitFor({ state: 'visible', timeout: 5000 });
-    await option.first().click();
-    log('--> "Warp10-Clever-Cloud" selected as datasource');
-  } else {
-    log('--> No datasource picker found, skipping selection');
-  }
+  await selectPanelDatasource(page, 'Warp10-Clever-Cloud');
 
   log('--> Filling query in editor');
   const editor = page.locator('.query-editor-row textarea').first();
-  await editor.waitFor({ state: 'visible', timeout: 2000 });
+  await editor.waitFor({ state: 'visible', timeout: 5000 });
   await editor.fill(panelQuery);
 
   // Step 5: Run the query
@@ -1295,7 +1403,50 @@ export async function createNewPanel(page: Page, panelTitle = 'Test Editor JSON'
   await refreshButton.first().waitFor({ state: 'visible', timeout: 3000 });
   await refreshButton.first().click();
 
-  // Step 6: Save panel and dashboard
+  // Steps 6-8: Read the dashboard JSON model, then leave the UI clean
+  const jsonContent = sidebar ? await readJsonModelFromSidebar(page) : await readJsonModelFromSaveDrawer(page);
+  log('--> JSON content retrieved:');
+  log(jsonContent);
+
+  // Step 9: Parse JSON and validate required fields
+  log('--> Parsing JSON and validating required keys');
+  let model;
+  try {
+    model = JSON.parse(jsonContent);
+  } catch (e) {
+    throw new Error('Textarea does not contain valid JSON');
+  }
+  const hasExpr = searchObject(model, 'expr', '1 2 +');
+  const hasTitle = searchObject(model, 'title', 'Test Editor JSON');
+
+  log(`--> "expr: 1 2 +" found: ${hasExpr}`);
+  log(`--> "title: Test Editor JSON" found: ${hasTitle}`);
+
+  expect(hasExpr).toBe(true);
+  expect(hasTitle).toBe(true);
+}
+
+/**
+ * Grafana 13: the sidebar "Code" pane shows the whole dashboard JSON in a Monaco
+ * editor. Nothing to clean up afterwards — the dashboard is never saved.
+ */
+async function readJsonModelFromSidebar(page: Page): Promise<string> {
+  await backToDashboard(page);
+  log('--> Opening the sidebar "Code" pane');
+  await page
+    .getByTestId('data-testid Dashboard Sidebar code button')
+    .or(page.getByRole('button', { name: 'Code', exact: true }))
+    .first()
+    .click();
+  log('--> Extracting JSON model');
+  return getPanelJsonModel(page);
+}
+
+/**
+ * Up to Grafana 12: the save drawer of a new dashboard exposes its JSON model in a
+ * Monaco editor. Close the drawer and discard the panel afterwards so nothing is saved.
+ */
+async function readJsonModelFromSaveDrawer(page: Page): Promise<string> {
   log('--> Saving panel/dashboard');
   const saveBtn = page.getByRole('button', { name: 'Save' });
   await saveBtn.first().waitFor({ state: 'visible', timeout: 3000 });
@@ -1307,35 +1458,19 @@ export async function createNewPanel(page: Page, panelTitle = 'Test Editor JSON'
     .waitFor({ state: 'visible', timeout: 5000 })
     .catch(() => {});
 
-  // Step 7: Extract JSON model from editor (Monaco or legacy)
   log('--> Extracting JSON model');
   const jsonContent = await getPanelJsonModel(page);
-  log('--> JSON content retrieved:');
-  log(jsonContent);
 
-  // Step 8: Cleanup UI (close drawer, discard, confirm)
   log('--> Cleaning up: closing JSON drawer');
-  const exitSave = page.getByTestId('data-testid Drawer close');
+  const exitSave = page.getByTestId('data-testid Drawer close').or(page.locator('button[aria-label="Drawer close"]'));
   if ((await exitSave.count()) > 0 && (await exitSave.first().isVisible())) {
-    log('--> Drawer close button found via data-testid');
     await exitSave.first().click();
     await exitSave
       .first()
       .waitFor({ state: 'hidden', timeout: 5000 })
       .catch(() => {});
   } else {
-    log('--> Drawer close button not found via data-testid, trying aria-label fallback');
-    const closeBtn = page.locator('button[aria-label="Drawer close"]');
-    if ((await closeBtn.count()) > 0 && (await closeBtn.first().isVisible())) {
-      log('--> Drawer close button found via aria-label');
-      await closeBtn.first().click();
-      await closeBtn
-        .first()
-        .waitFor({ state: 'hidden', timeout: 5000 })
-        .catch(() => {});
-    } else {
-      log('--> Drawer close button not found by any known selector. Skipping.');
-    }
+    log('--> Drawer close button not found by any known selector. Skipping.');
   }
 
   // "Discard" and confirm are optional depending on version/state
@@ -1355,23 +1490,7 @@ export async function createNewPanel(page: Page, panelTitle = 'Test Editor JSON'
   } else {
     log('--> No "Discard" button found, skipping discard cleanup.');
   }
-
-  // Step 9: Parse JSON and validate required fields
-  log('--> Parsing JSON and validating required keys');
-  let model;
-  try {
-    model = JSON.parse(jsonContent);
-  } catch (e) {
-    throw new Error('Textarea does not contain valid JSON');
-  }
-  const hasExpr = searchObject(model, 'expr', '1 2 +');
-  const hasTitle = searchObject(model, 'title', 'Test Editor JSON');
-
-  log(`--> "expr: 1 2 +" found: ${hasExpr}`);
-  log(`--> "title: Test Editor JSON" found: ${hasTitle}`);
-
-  expect(hasExpr).toBe(true);
-  expect(hasTitle).toBe(true);
+  return jsonContent;
 }
 
 function searchObject(obj: any, key: string, value: string): boolean {

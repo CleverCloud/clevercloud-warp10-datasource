@@ -4,7 +4,13 @@
  * Scope: backend health only
  */
 import { test, expect, registerDatasource } from '../fixtures';
-import { log, getGrafanaVersion, openNewWarp10Datasource, waitForHealthCheckResponse } from '../utils';
+import {
+  log,
+  getGrafanaVersion,
+  openNewWarp10Datasource,
+  setDatasourceName,
+  waitForHealthCheckResponse,
+} from '../utils';
 
 // Test healthcheck in proxy and direct modes only
 test('Healthcheck in proxy and direct modes', async ({ page }) => {
@@ -38,7 +44,7 @@ test('Healthcheck in proxy and direct modes', async ({ page }) => {
   log('--> Navigating to data sources page...');
   await openNewWarp10Datasource(page);
   registerDatasource('test_health_warp10');
-  await page.fill('#basic-settings-name', 'test_health_warp10');
+  await setDatasourceName(page, 'test_health_warp10');
   await page.fill('#url', 'http://warp10:8080');
 
   log('--> Saving datasource in proxy mode...');
@@ -67,7 +73,10 @@ test('Healthcheck in proxy and direct modes', async ({ page }) => {
   try {
     // Several success alerts can stack up (the "updated" toast plus one per health check),
     // so target the health-check one by its text and tolerate duplicates
-    const alert = page.locator('[data-testid="data-testid Alert success"]').filter({ hasText: /working/i }).first();
+    const alert = page
+      .locator('[data-testid="data-testid Alert success"]')
+      .filter({ hasText: /working/i })
+      .first();
     await expect(alert).toBeVisible({ timeout: 15000 });
     const alertTextProxy = (await alert.textContent())?.trim() || '';
     log(`--> [proxy] Alert: "${alertTextProxy}"`);
