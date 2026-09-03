@@ -14,6 +14,8 @@ import {
   FinalTestValidation,
   testDatasourceInvalidURL,
   openNewWarp10Datasource,
+  selectPanelDatasource,
+  setDatasourceName,
   waitForHealthCheckResponse,
 } from '../utils';
 
@@ -72,7 +74,7 @@ test('Basic scenario: Create DS, Dashboard, Select Datasource, Get Warp10 Respon
   // Fill datasource config
   log('--> Filling datasource config');
   registerDatasource('test_warp10_scenario');
-  await page.fill('#basic-settings-name', 'test_warp10_scenario');
+  await setDatasourceName(page, 'test_warp10_scenario');
 
   // Fill invalid URL first and test error
   log('--> Attempting to save and test datasource with invalid URL...');
@@ -99,13 +101,13 @@ test('Basic scenario: Create DS, Dashboard, Select Datasource, Get Warp10 Respon
 
   // === Step 2: Build dashboard ===
   log('--> Opening dashboard creation wizard');
-  await page.getByRole('link', { name: 'Build a dashboard' }).click();
+  await page.goto('http://localhost:3000/dashboard/new');
 
   log('--> Creating new panel');
   await clickAddPanelButton(page);
 
   log('--> Selecting created datasource');
-  await page.locator('[data-testid="data-source-card"] span', { hasText: 'test_warp10_scenario' }).click();
+  await selectPanelDatasource(page, 'test_warp10_scenario');
 
   log('--> Injecting Warp10 query into editor');
   await page.locator('.query-editor-row textarea').first().fill('1 2 +');

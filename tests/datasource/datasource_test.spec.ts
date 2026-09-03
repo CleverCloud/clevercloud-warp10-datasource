@@ -14,6 +14,7 @@ import {
   logVisibility,
   testDatasourceInvalidURL,
   openNewWarp10Datasource,
+  setDatasourceName,
   waitForHealthCheckResponse,
 } from '../utils';
 
@@ -65,7 +66,7 @@ test('Datasource: test all fields in datasource config + healthcheck', async ({ 
 
   log('--> Filling Plugin Name');
   registerDatasource('test_warp10');
-  await page.fill('#basic-settings-name', 'test_warp10');
+  await setDatasourceName(page, 'test_warp10');
 
   log('--> Testing misconfiguration: setting an invalid Warp10 URL');
   await testDatasourceInvalidURL(page);

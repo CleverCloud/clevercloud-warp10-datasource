@@ -17,10 +17,16 @@ import { api, apiList, TEST_NAME_PATTERN } from './grafana-api';
 // Provisioned entries that must survive between runs
 const KEEP_DATASOURCES = ['Warp10-Clever-Cloud'];
 
-// Static names used by the UI-flow specs, plus 'Warp10' — the default name Grafana
-// gives a datasource the moment the plugin tile is clicked, which survives when a
-// test dies before its rename is saved
-const STATIC_TEST_DATASOURCES = ['test_warp10', 'test_health_warp10', 'test_warp10_scenario', 'Warp10'];
+// Static names used by the UI-flow specs, plus the default names Grafana gives a
+// datasource the moment the plugin tile is clicked ('Warp10' up to Grafana 12, the
+// plugin id from 13), which survive when a test dies before its rename is saved
+const STATIC_TEST_DATASOURCES = [
+  'test_warp10',
+  'test_health_warp10',
+  'test_warp10_scenario',
+  'Warp10',
+  'clevercloud-warp10-datasource',
+];
 
 // A uniqueName() entry younger than this may belong to a suite still running in
 // parallel with this one — leave it for the next run to reap
