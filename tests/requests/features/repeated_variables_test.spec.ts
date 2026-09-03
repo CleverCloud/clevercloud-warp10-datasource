@@ -8,7 +8,6 @@ import { test, expect } from '../../fixtures';
 import { goToDashboard, log } from '../../utils';
 
 const GRAFANA_HOST = 'http://localhost:3000';
-const PLAYWRIGHT_TIMEOUT = 5000;
 
 test.describe('Repeated Variables Feature', () => {
   const responses: any[] = [];
