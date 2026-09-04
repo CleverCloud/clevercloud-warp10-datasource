@@ -18,16 +18,23 @@ We no longer use Cypress — Playwright is the **officially supported framework*
 > - All tests are validated on **Chromium** and **Firefox**.
 > - **Safari (Webkit)** is explicitly **not supported** due to recurring instability in both local and CI environments.
 
-### 1. Start Local Stack
+### 1. Build the plugin, then start the local stack
 
 ```bash
-  docker compose -f docker-compose-plugin.yaml up
+  npm run build && mage build:linux   # frontend + linux backend binary into ./dist
+  GRAFANA_VERSION=12.1.1 npm run e2e:stack
+  npm run e2e:stack:verify
 ```
 
-This launches:
+This pulls the official `grafana/grafana` and `warp10io/warp10` images (no custom image is
+built or published), bind-mounts `./dist` as the plugin, waits for both healthchecks, then
+proves the plugin is registered and its backend answers a health check. The exact same
+commands run in CI, for every Grafana version of the matrix.
+
 - Warp10 server (`warp10:8080`)
-- Grafana server (`grafana:3000`)
-- Warp10 preconfigured with a mock token
+- Grafana server (`grafana:3000`, `admin` / `admin`)
+
+Stop it with `npm run e2e:stack:down`.
 
 ### 2. Launch Playwright in UI Mode
 
@@ -39,25 +46,15 @@ This launches:
 
 ---
 
-## GitHub CI (playwright.yml)
+## GitHub CI (ci.yml)
 
-Configured to:
-- Start Docker stack (Grafana + Warp10)
-- Run `npx playwright install` for browsers
-
----
-
-## Token (warp10.conf)
-
-```conf
-warp.token.mytoken = {
-  'owner' 'test'
-  'producer' 'test'
-  'application' 'testapp'
-  'ttl' 0
-  'labels' { }
-}
-```
+The `build` job builds the plugin once and uploads `dist/` as an artifact. The `e2e` job
+then runs one cell per Grafana version × browser (chromium, firefox), each cell:
+- downloading `dist/`, installing the cell's browser plus the chromium headless shell
+  (the `auth` login project runs on it whatever the browser under test),
+- starting the same compose stack as above, then `verify-stack.sh`,
+- running `npx playwright test --project=<browser>`; report, traces and container logs
+  are uploaded on failure only.
 
 ---
 
@@ -90,6 +87,7 @@ warp.token.mytoken = {
 - tests
   - __config__
     - [docker-compose-plugin.yaml](tests/config/docker-compose-plugin.yaml)
+    - [verify-stack.sh](tests/config/verify-stack.sh)
     - __grafana_volumes__
       - __provisioning__
         - __dashboards__
@@ -97,7 +95,6 @@ warp.token.mytoken = {
           - [test_dashboard.json](tests/config/grafana_volumes/provisioning/dashboards/test_dashboard.json)
         - __datasources__
           - [datasources.yml](tests/config/grafana_volumes/provisioning/datasources/datasources.yml)
-          - [warp10.conf](tests/config/warp10.conf)
   - __datasource__
     - [datasource_test.spec.ts](tests/datasource/datasource_test.spec.ts)
   - __health__

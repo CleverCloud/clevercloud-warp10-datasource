@@ -1,46 +1,56 @@
+# The e2e stack — single source of truth for local runs and CI:
+#
+#   npm run build && mage build:linux        # produces ./dist (frontend + linux backend binary)
+#   GRAFANA_VERSION=12.1.1 npm run e2e:stack  # pulls the official images, waits for health
+#   npm run e2e:stack:verify                  # proves the plugin is loaded before any test runs
+#   npx playwright test
+#
+# The plugin is bind-mounted from ../../dist into the official Grafana image, so no
+# custom image is ever built or published: the same command works on a developer
+# machine and on a CI runner without any registry credentials.
+# Explicit project name: the default is the directory name ('config'), which is
+# generic enough to collide with another project's containers — and `down
+# --remove-orphans` would then remove them.
+name: warp10-e2e
+
 services:
   grafana:
-    container_name: 'clevercloud-warp10-datasource'
-    build:
-      context: ../../.config
-      args:
-        grafana_version: ${GRAFANA_VERSION:-12.1.1}
+    image: grafana/grafana:${GRAFANA_VERSION:-12.1.1}
     ports:
       - 3000:3000
     volumes:
-      - ../../dist:/var/lib/grafana/plugins/clevercloud-warp10-datasource
+      # create_host_path: false makes compose refuse to start when dist/ is missing
+      # (build the plugin first) instead of silently creating an empty, root-owned
+      # dist/ on the host that the next `npm run build` then cannot write into
+      - type: bind
+        source: ../../dist
+        target: /var/lib/grafana/plugins/clevercloud-warp10-datasource
+        bind:
+          create_host_path: false
       - ./grafana_volumes/provisioning:/etc/grafana/provisioning
-      - ./warp10.conf:/opt/warp10/etc/warp10.conf
     depends_on:
       warp10:
         condition: service_healthy
-    networks:
-      - warp10-net
     environment:
       - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=clevercloud-warp10-datasource
       - WARP10_URL=http://warp10:8080
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:3000/login" ]
-      interval: 10s
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 5s
       timeout: 5s
-      retries: 6
+      retries: 24
+      start_period: 10s
 
   warp10:
     # Keep the default in sync with docker-compose.yaml at the repo root
     # (pkg/plugin/warp10_testcontainer_test.go pins its own copy)
     image: warp10io/warp10:${WARP10_VERSION:-3.5.0-alpine}
-    container_name: warp10
     ports:
       - 8080:8080
       - 8081:8081
-    networks:
-      - warp10-net
     healthcheck:
-      test: [ "CMD", "curl", "-f", "-XPOST", "-d", "'RETURN 1'", "http://localhost:8080/api/v0/exec" ]
-      interval: 10s
+      test: ["CMD", "curl", "-f", "-XPOST", "-d", "'RETURN 1'", "http://localhost:8080/api/v0/exec"]
+      interval: 5s
       timeout: 5s
-      retries: 6
-
-networks:
-  warp10-net:
-    driver: bridge
+      retries: 24
+      start_period: 10s

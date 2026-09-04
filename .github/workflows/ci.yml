@@ -3,25 +3,34 @@ name: CI
 on:
   push:
     branches:
-      - '**'
+      - main
   pull_request:
-    branches:
-      - '**'
+  workflow_dispatch:
+  # release.yml calls this workflow before publishing a tag, so a release can
+  # only ship a commit that passed the same build, unit and e2e checks as a PR
+  workflow_call:
 
+# Least privilege: nothing here writes to the repo, a registry or a PR, so the very
+# same workflow runs unchanged on pull requests from forks (where GitHub hands the
+# job a read-only token whatever the permissions block asks for).
+permissions:
+  contents: read
+
+# A new push on the same branch/PR supersedes the run in progress
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PLUGIN_ID: clevercloud-warp10-datasource
+
+# No secret is ever handed to this workflow: signing and releasing happen in
+# release.yml, on tags only, so a compromised dependency running here cannot
+# read anything worth stealing.
 jobs:
   build:
     name: Build, lint and unit tests
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      plugin-id: ${{ steps.metadata.outputs.plugin-id }}
-      plugin-version: ${{ steps.metadata.outputs.plugin-version }}
-      has-e2e: ${{ steps.check-for-e2e.outputs.has-e2e }}
-      has-backend: ${{ steps.check-for-backend.outputs.has-backend }}
-    env:
-      GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -41,99 +50,97 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      #  removed because of the release build by Grafana is affected by the CVE 2025-7783 from the library form-Data in jest-environment-jsdom
-      #      - name: Unit tests
-      #      run: npm run test:ci
+      - name: Unit tests
+        run: npm run test:ci
 
+      # The bundle-size baseline (main-branch-stats) is produced by bundle-stats.yml
+      # on main, so no --profile build is needed here
       - name: Build frontend
-        run: |
-          if [ "${{ github.event_name }}" == "push" ] && [ "${{ github.ref }}" == "refs/heads/main" ]; then
-            npm run build -- --profile --json stats.json
-          else
-            npm run build
-          fi
-
-      - name: Check for backend
-        id: check-for-backend
-        run: |
-          if [ -f "Magefile.go" ]
-          then
-            echo "has-backend=true" >> $GITHUB_OUTPUT
-          fi
+        run: npm run build
 
       - name: Setup Go environment
-        if: steps.check-for-backend.outputs.has-backend == 'true'
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version-file: go.mod
 
       - name: Test backend
-        if: steps.check-for-backend.outputs.has-backend == 'true'
         uses: magefile/mage-action@v3
         with:
           version: latest
           args: coverage
 
-      - name: Build backend
-        if: steps.check-for-backend.outputs.has-backend == 'true'
+      # The e2e stack runs the plugin on linux/amd64 runners only; the multi-platform
+      # build belongs to release.yml
+      - name: Build backend (linux/amd64)
         uses: magefile/mage-action@v3
         with:
           version: latest
-          args: buildAll
-
-      - name: Check for E2E
-        id: check-for-e2e
-        run: |
-          if [ -f "playwright.config.ts" ]
-          then
-            echo "has-e2e=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Sign plugin
-        run: npm run sign
-        if: ${{ env.GRAFANA_ACCESS_POLICY_TOKEN != '' }}
+          args: build:linux
 
       - name: Get plugin metadata
         id: metadata
         run: |
-          sudo apt-get install jq
+          echo "plugin-version=$(jq -r .info.version dist/plugin.json)" >> "$GITHUB_OUTPUT"
 
-          export GRAFANA_PLUGIN_ID=$(cat dist/plugin.json | jq -r .id)
-          export GRAFANA_PLUGIN_VERSION=$(cat dist/plugin.json | jq -r .info.version)
-          export GRAFANA_PLUGIN_ARTIFACT=${GRAFANA_PLUGIN_ID}-${GRAFANA_PLUGIN_VERSION}.zip
+      - name: Report plugin build
+        run: |
+          {
+            echo "### Plugin build"
+            echo "- id: $(jq -r .id dist/plugin.json) version: ${{ steps.metadata.outputs.plugin-version }}"
+            echo "- backend binary: $(ls dist/gpx_*_linux_amd64) ($(du -h dist/gpx_*_linux_amd64 | cut -f1), executable: $([ -x dist/gpx_*_linux_amd64 ] && echo yes || echo NO))"
+            echo "- dist size: $(du -sh dist | cut -f1)"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          ls -la dist
+          test -x dist/gpx_*_linux_amd64
 
-          echo "plugin-id=${GRAFANA_PLUGIN_ID}" >> $GITHUB_OUTPUT
-          echo "plugin-version=${GRAFANA_PLUGIN_VERSION}" >> $GITHUB_OUTPUT
-          echo "archive=${GRAFANA_PLUGIN_ARTIFACT}" >> $GITHUB_OUTPUT
+      # Tarred because upload-artifact drops file modes: an un-executable backend binary
+      # would make Grafana refuse to start the plugin in every e2e job
+      - name: Upload plugin build for the e2e jobs
+        run: tar -czf dist.tgz dist
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist.tgz
+          retention-days: 1
+
+      # --- Packaging: cheap, so plugin.json problems surface on the PR, not after merge
       - name: Package plugin
         id: package-plugin
         run: |
-          mv dist ${{ steps.metadata.outputs.plugin-id }}
-          zip ${{ steps.metadata.outputs.archive }} ${{ steps.metadata.outputs.plugin-id }} -r
+          archive="${PLUGIN_ID}-${{ steps.metadata.outputs.plugin-version }}.zip"
+          cp -r dist "$PLUGIN_ID"
+          zip -qr "$archive" "$PLUGIN_ID"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
 
       - name: Check plugin.json
         run: |
           docker run --pull=always \
-            -v $PWD/${{ steps.metadata.outputs.archive }}:/archive.zip \
+            -v "$PWD/${{ steps.package-plugin.outputs.archive }}:/archive.zip" \
             grafana/plugin-validator-cli -analyzer=metadatavalid /archive.zip
 
-      - name: Archive Build
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.metadata.outputs.plugin-id }}-${{ steps.metadata.outputs.plugin-version }}
-          path: ${{ steps.metadata.outputs.plugin-id }}
-          retention-days: 5
+  compat:
+    name: Latest Grafana API compatibility check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Upload stats.json artifact
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v4
         with:
-          name: main-branch-stats
-          path: stats.json
-          overwrite: true
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # levitate analyzes the TypeScript sources, no build needed
+      - name: Compatibility check
+        run: npx --yes @grafana/levitate@latest is-compatible --path $(find ./src -type f \( -name "module.ts" -o -name "module.tsx" \)) --target @grafana/data,@grafana/ui,@grafana/runtime
 
   resolve-versions:
+    name: Resolve Grafana versions to test
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.resolve-versions.outputs.matrix }}
@@ -145,39 +152,102 @@ jobs:
         id: resolve-versions
         uses: grafana/plugin-actions/e2e-version@main
         with:
-          skip-grafana-dev-image: true
+          skip-grafana-nightly-image: true
 
-  playwright-tests:
-    needs: [ resolve-versions, build ]
+  e2e:
+    name: e2e · Grafana ${{ matrix.grafana.version }} · ${{ matrix.browser }}
+    needs: [build, resolve-versions]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        GRAFANA_IMAGE: ${{ fromJson(needs.resolve-versions.outputs.matrix) }}
-    uses: ./.github/workflows/playwright.yml
-    with:
-      grafana-version: ${{ matrix.GRAFANA_IMAGE.version }}
-      upload-artifacts: false
+        grafana: ${{ fromJson(needs.resolve-versions.outputs.matrix) }}
+        browser: [chromium, firefox]
+    env:
+      GRAFANA_VERSION: ${{ matrix.grafana.version }}
+      COMPOSE_FILE: tests/config/docker-compose-plugin.yaml
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-#
-#      - name: Docker logs
-#        if: ${{ always() && steps.run-tests-chromium.outcome == 'failure' }}
-#        run: |
-#          docker logs clevercloud-warp10-datasource >& grafana-server.log
-#
-#      - name: Upload server log
-#        uses: actions/upload-artifact@v4
-#        if: ${{ always() && steps.run-tests.outcome == 'failure' }}
-#        with:
-#          name: ${{ matrix.GRAFANA_IMAGE.name }}-v${{ matrix.GRAFANA_IMAGE.version }}-${{github.run_id}}-server-log
-#          path: grafana-server.log
-#          retention-days: 5
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
 
-      # Uncomment this step to upload the Playwright report to Github artifacts.
-      # If your repository is public, the report will be public on the Internet so beware not to expose sensitive information.
-      # - name: Upload artifacts
-      #   uses: actions/upload-artifact@v4
-      #   if: ${{ always() && steps.run-tests.outcome == 'failure' }}
-      #   with:
-      #     name: playwright-report-${{ matrix.GRAFANA_IMAGE.NAME }}-v${{ matrix.GRAFANA_IMAGE.VERSION }}-${{github.run_id}}
-      #     path: playwright-report/
-      #     retention-days: 5
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download plugin build
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+
+      - name: Unpack plugin build
+        run: |
+          tar -xzf dist.tgz && rm dist.tgz
+          echo "- plugin $(jq -r .id dist/plugin.json) $(jq -r .info.version dist/plugin.json), backend $(ls dist/gpx_*_linux_amd64)" >> "$GITHUB_STEP_SUMMARY"
+          test -x dist/gpx_*_linux_amd64
+
+      - name: Get Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Keyed on the Playwright version, which is what decides the browser build — and
+      # placed BEFORE the install so a hit actually skips the download
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium-headless-shell-${{ matrix.browser }}
+
+      # The 'auth' project of @grafana/plugin-e2e, a dependency of every browser
+      # project, logs in with the default browser (chromium headless shell): without
+      # it the firefox cell dies in auth.setup before running a single test
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium-headless-shell ${{ matrix.browser }}
+
+      - name: Pull images
+        run: |
+          echo "### Images ($(date -u +%FT%TZ))" >> "$GITHUB_STEP_SUMMARY"
+          docker compose pull --quiet
+          docker images --format '- {{.Repository}}:{{.Tag}} {{.Size}}' | grep -E 'grafana/grafana|warp10io/warp10' | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Start Grafana and Warp10
+        run: |
+          echo "### Stack start ($(date -u +%FT%TZ))" >> "$GITHUB_STEP_SUMMARY"
+          docker compose up -d --wait --wait-timeout 180
+
+      # The default `run` shell is `bash -e` without pipefail: the pipe into tee would
+      # otherwise swallow a failing verification
+      - name: Verify plugin loaded
+        run: |
+          set -o pipefail
+          tests/config/verify-stack.sh | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Run Playwright tests (${{ matrix.browser }})
+        run: npx playwright test --project=${{ matrix.browser }}
+
+      - name: Collect service logs
+        if: failure()
+        run: |
+          docker compose logs --no-color grafana > grafana.log 2>&1 || true
+          docker compose logs --no-color warp10 > warp10.log 2>&1 || true
+
+      - name: Upload report, traces and logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ matrix.grafana.version }}-${{ matrix.browser }}
+          path: |
+            playwright-report/
+            test-results/
+            grafana.log
+            warp10.log
+          retention-days: 5
+
+      - name: Stop stack
+        if: always()
+        run: docker compose down -v --remove-orphans
