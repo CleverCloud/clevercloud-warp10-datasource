@@ -5,12 +5,20 @@ on:
     tags:
       - 'v*' # Run workflow on version tags, e.g. v1.0.0.
 
-permissions:
-  contents: write
-
 jobs:
+  # The full CI (build, unit tests, plugin.json validation, e2e on every Grafana
+  # version × browser) must pass on the tagged commit before anything is published
+  ci:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   release:
+    needs: ci
     runs-on: ubuntu-latest
+    # Only this job creates the GitHub release; the CI above never gets write access
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4

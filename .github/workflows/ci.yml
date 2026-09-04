@@ -6,6 +6,9 @@ on:
       - main
   pull_request:
   workflow_dispatch:
+  # release.yml calls this workflow before publishing a tag, so a release can
+  # only ship a commit that passed the same build, unit and e2e checks as a PR
+  workflow_call:
 
 # Least privilege: nothing here writes to the repo, a registry or a PR, so the very
 # same workflow runs unchanged on pull requests from forks (where GitHub hands the
