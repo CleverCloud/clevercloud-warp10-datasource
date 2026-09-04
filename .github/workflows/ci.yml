@@ -194,14 +194,17 @@ jobs:
 
       # Keyed on the Playwright version, which is what decides the browser build — and
       # placed BEFORE the install so a hit actually skips the download
-      - name: Cache Playwright browser
+      - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-${{ matrix.browser }}
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium-headless-shell-${{ matrix.browser }}
 
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps ${{ matrix.browser }}
+      # The 'auth' project of @grafana/plugin-e2e, a dependency of every browser
+      # project, logs in with the default browser (chromium headless shell): without
+      # it the firefox cell dies in auth.setup before running a single test
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium-headless-shell ${{ matrix.browser }}
 
       - name: Pull images
         run: |
