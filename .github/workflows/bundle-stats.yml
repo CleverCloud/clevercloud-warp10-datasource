@@ -1,9 +1,16 @@
 name: Bundle Stats
 
+# Pull requests compare their bundle against the `main-branch-stats` artifact.
+# Only a run on main produces that artifact, and GitHub expires it after 90 days,
+# so main must run this workflow too or every PR fails with "Artifact has expired".
 on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: write
