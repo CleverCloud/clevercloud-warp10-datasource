@@ -19,7 +19,14 @@ services:
     ports:
       - 3000:3000
     volumes:
-      - ../../dist:/var/lib/grafana/plugins/clevercloud-warp10-datasource
+      # create_host_path: false makes compose refuse to start when dist/ is missing
+      # (build the plugin first) instead of silently creating an empty, root-owned
+      # dist/ on the host that the next `npm run build` then cannot write into
+      - type: bind
+        source: ../../dist
+        target: /var/lib/grafana/plugins/clevercloud-warp10-datasource
+        bind:
+          create_host_path: false
       - ./grafana_volumes/provisioning:/etc/grafana/provisioning
     depends_on:
       warp10:
