@@ -46,25 +46,15 @@ Stop it with `npm run e2e:stack:down`.
 
 ---
 
-## GitHub CI (playwright.yml)
+## GitHub CI (ci.yml)
 
-Configured to:
-- Start Docker stack (Grafana + Warp10)
-- Run `npx playwright install` for browsers
-
----
-
-## Token (warp10.conf)
-
-```conf
-warp.token.mytoken = {
-  'owner' 'test'
-  'producer' 'test'
-  'application' 'testapp'
-  'ttl' 0
-  'labels' { }
-}
-```
+The `build` job builds the plugin once and uploads `dist/` as an artifact. The `e2e` job
+then runs one cell per Grafana version × browser (chromium, firefox), each cell:
+- downloading `dist/`, installing the cell's browser plus the chromium headless shell
+  (the `auth` login project runs on it whatever the browser under test),
+- starting the same compose stack as above, then `verify-stack.sh`,
+- running `npx playwright test --project=<browser>`; report, traces and container logs
+  are uploaded on failure only.
 
 ---
 
@@ -97,6 +87,7 @@ warp.token.mytoken = {
 - tests
   - __config__
     - [docker-compose-plugin.yaml](tests/config/docker-compose-plugin.yaml)
+    - [verify-stack.sh](tests/config/verify-stack.sh)
     - __grafana_volumes__
       - __provisioning__
         - __dashboards__
@@ -104,7 +95,6 @@ warp.token.mytoken = {
           - [test_dashboard.json](tests/config/grafana_volumes/provisioning/dashboards/test_dashboard.json)
         - __datasources__
           - [datasources.yml](tests/config/grafana_volumes/provisioning/datasources/datasources.yml)
-          - [warp10.conf](tests/config/warp10.conf)
   - __datasource__
     - [datasource_test.spec.ts](tests/datasource/datasource_test.spec.ts)
   - __health__
